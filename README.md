@@ -17,7 +17,7 @@ GitHub > Actions > "Android APK" > Run workflow > bitince Artifacts > HafizBahce
 - Ağaçlar panorama şeridinde sağdan sola dizili (1. ağaç en sağda, en büyük). Sürükleyerek veya Önceki/Sonraki ile gezilir.
 - Ağaçta meyveler yukarıdan aşağıya sıralıdır (1. ayet en üstte).
 
-## Ağaç animasyonları (video -> kare dizisi)
-- `araclar/video_kareleri.py <video.mp4>`: 20 ağaçlı videoyu keser, her ağaç için `assets/animasyon/NN/KK.webp` (40 şeffaf kare) ve `agaclar/treeNN.png` üretir.
-- `araclar/agac_hazirla.py`, `araclar/anim_listesi.py`: meyve konumlarını ve `src/anim.js` listesini üretir.
-- Bahçede ortadaki ağaç varınca bir kez yavaşça döner (ileri-geri), sonra durur.
+## Performans notları
+- Bahçede küçük (600 px) ağaç görselleri, ağaç ekranında yüksek çözünürlüklü WebP kullanılır.
+- Bulanık arka plan hazır görsel (`assets/sahne/arka_bulanik.jpg`), çalışma anında bulanıklaştırma yok.
+- `araclar/video_kareleri.py` videodan şeffaf kare dizisi üretir, ancak telefonu zorladığı için uygulamaya bağlı değildir.
