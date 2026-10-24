@@ -11,3 +11,8 @@ GitHub > Actions > "Android APK" > Run workflow > bitince Artifacts > HafizBahce
 - `src/data.json` ayet görselleri ve mealler, `src/trees.json` her ağacın meyve konumları (alttan üste)
 - `assets/agac` kırpılmış şeffaf ağaçlar, `assets/sahne` kapı ve bahçe zemini, `assets/el` şeffaf eller
 - `araclar/agac_hazirla.py` ağaçları kırpar ve meyve konumlarını üretir
+
+## Güncelleme: panorama bahçe
+- Bahçe arka planı `assets/sahne/panorama.jpg`. Parmakla sağa sola sürükleyince etrafa bakılır.
+- İleri/Geri ile ağaçtan ağaca yürünür, yakın ağaç büyük, sonrakiler küçüktür.
+- Ağaçta meyveler yukarıdan aşağıya sıralıdır (1. ayet en üstte).
