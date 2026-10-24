@@ -1,5 +1,5 @@
 import React, { useRef, useState, useEffect, useMemo } from 'react';
-import { View, Text, Image, Pressable, Animated, Easing, StyleSheet, Dimensions, StatusBar, ScrollView, PanResponder } from 'react-native';
+import { View, Text, Image, Pressable, Animated, Easing, StyleSheet, Dimensions, StatusBar, ScrollView } from 'react-native';
 import DATA from './src/data.json';
 import TREES_XY from './src/trees.json';
 import { TREE_IMG, GARDEN_IMG, SCENE, IMG } from './src/assets';
@@ -17,8 +17,6 @@ const COLORS = [
   { name: 'Yeşil', base: '#4caf50', dark: '#2e7d32', tx: '#ffffff' },
   { name: 'Lacivert', base: '#1c3573', dark: '#0d1b40', tx: '#ffffff' },
 ];
-const PANO_RATIO = 2576 / 1093;
-const PH = H, PW = H * PANO_RATIO;               // panorama ekran yuksekligine oturur
 // meyveler YUKARIDAN ASAGI: 1. ayet agacin en ustunde, sonuncusu en altta
 const TREES = TREES_XY.map((t) => ({ ...t, page: DATA.pages[t.n - 1] }));
 
@@ -43,14 +41,15 @@ function FruitBall({ D, k, state }) {
 }
 
 // ---------------------------------------------------------------- agac ekrani: altindan bakis, butun meyveler gorunur
-// meyve dizilimi ustten alta: 2, 3, 4, 3 ... (12 ayet), ayet sayisina gore
+// meyve dizilimi ustten alta: 2, 3, 4, 3 ... ; her satirda SAGDAN SOLA (1. meyve ust satirin en sagi)
 const PAT = { 1: [1], 2: [2], 3: [3], 4: [2, 2], 5: [2, 3], 6: [2, 4], 7: [2, 3, 2], 8: [2, 3, 3], 9: [2, 3, 4], 10: [2, 3, 3, 2], 11: [2, 3, 4, 2], 12: [2, 3, 4, 3] };
 const FD = Math.min(66, W * 0.165);               // meyve capi
 const PLW = W * 0.235;                            // plaka genisligi
+const FOCUS_S = 1.9;                              // yakinlasma
 function fruitLayout(n) {
   const rows = PAT[n] || [Math.ceil(n / 2), n - Math.ceil(n / 2)];
   const rowStep = FD + 44, y0 = H * 0.19, out = [];
-  rows.forEach((c, r) => { for (let j = 0; j < c; j++) out.push({ x: W / 2 + (j - (c - 1) / 2) * PLW * 1.02, y: y0 + r * rowStep }); });
+  rows.forEach((c, r) => { for (let j = 0; j < c; j++) out.push({ x: W / 2 + ((c - 1) / 2 - j) * PLW * 1.02, y: y0 + r * rowStep }); });
   return out;
 }
 
@@ -59,21 +58,26 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   const [k, setK] = useState(Math.min(startK, n));        // sirada olan meyve (n = hepsi toplandi)
   const [open, setOpen] = useState(null);                  // acik ayet indeksi
   const [inHand, setInHand] = useState(false);             // meyve avucta mi
+  const [focus, setFocus] = useState(null);                // yakinlastirilan meyve
+  const [menu, setMenu] = useState(false);
   const [msg, setMsg] = useState(null);
   const busy = useRef(false);
   const fade = useRef(new Animated.Value(0)).current;
   const hy = useRef(new Animated.Value(0)).current;        // el yukselmesi
   const cardOp = useRef(new Animated.Value(0)).current;
   const finOp = useRef(new Animated.Value(0)).current;
+  const cs = useRef(new Animated.Value(1)).current;        // kamera olcegi
+  const cx = useRef(new Animated.Value(0)).current;        // kamera kaydirma
+  const cy = useRef(new Animated.Value(0)).current;
   const leave = (then) => { if (busy.current) return; busy.current = true; onLeave(then === 'next'); Animated.timing(fade, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => onDone(then === 'next')); };
-  const onBack = () => leave('back');
+  const onBack = () => { setMenu(false); leave('back'); };
+  const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 1500); };
 
-  // agac: tacin ekrani doldurdugu, alttan bakis (govde altta)
   const view = useMemo(() => {
     const TW = W, TH = W / tree.aspect;
-    const [cx, cy, cw, ch] = tree.crown;
+    const [ccx, ccy, cw, ch] = tree.crown;
     const s = Math.min(1.12 / cw, (H * 0.62) / (ch * TH));
-    return { TW, TH, s, tx: W / 2 - s * cx * TW, ty: H * 0.34 - s * cy * TH };
+    return { TW, TH, s, tx: W / 2 - s * ccx * TW, ty: H * 0.34 - s * ccy * TH };
   }, [tree]);
   const pos = useMemo(() => fruitLayout(n), [n]);
 
@@ -82,14 +86,30 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
     if (k >= n) Animated.timing(finOp, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
-  const hint = k >= n ? null : `Parlayan ${k + 1}. meyveyi (${COLORS[k % 5].name.toLowerCase()}) kopar`;
+  // kamera: meyveyi ekranin ust-ortasina getirip yakinlastir / geri cik
+  const camTo = (i, ms = 600) => {
+    if (i == null) return Animated.parallel([T(cs, 1, ms), T(cx, 0, ms), T(cy, 0, ms)]);
+    const p = pos[i], fx = p.x, fy = p.y + FD * 0.8;
+    return Animated.parallel([T(cs, FOCUS_S, ms), T(cx, W / 2 - FOCUS_S * fx, ms), T(cy, H * 0.36 - FOCUS_S * fy, ms)]);
+  };
+  const zoomOn = (i, cb) => { setFocus(i); camTo(i).start(() => { if (cb) cb(); }); };
+
+  const hint = k >= n ? null
+    : focus === k ? `Meyveye bir daha dokun: eline alacaksın`
+    : `Parlayan ${k + 1}. meyveye (${COLORS[k % 5].name.toLowerCase()}) dokun`;
 
   const pressFruit = (i) => {
     if (busy.current) return;
-    if (i < k) { setInHand(false); setOpen(i); Animated.timing(cardOp, { toValue: 1, duration: 300, useNativeDriver: true }).start(); return; }
-    if (i > k) { setMsg('Önce sıradaki meyveyi topla'); setTimeout(() => setMsg(null), 1400); return; }
-    busy.current = true;                                    // i === k : meyveyi kopar
-    T(hy, -H * 0.26, 650).start(() => {
+    if (i > k) { flash('Önce sıradaki meyveyi topla'); return; }
+    if (focus !== i) { busy.current = true; zoomOn(i, () => { busy.current = false; }); return; }   // 1. dokunus: yakinlas
+    busy.current = true;                                    // 2. dokunus
+    if (i < k) {
+      camTo(null, 450).start(); setFocus(null); setInHand(false); setOpen(i);
+      Animated.timing(cardOp, { toValue: 1, duration: 300, useNativeDriver: true }).start(() => { busy.current = false; });
+      return;
+    }
+    setFocus(null);                                         // i === k : meyve ele gelir
+    Animated.parallel([T(hy, -H * 0.26, 650), camTo(null, 650)]).start(() => {
       setInHand(true); setOpen(i);
       Animated.timing(cardOp, { toValue: 1, duration: 350, useNativeDriver: true }).start(() => { busy.current = false; });
     });
@@ -107,6 +127,29 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
     });
   };
 
+  // menu: onceki / sonraki ayet, hepsini goster
+  const base = open != null ? open : focus;
+  const prevT = base == null ? k - 1 : base - 1;
+  const nextT = base == null ? Math.min(k, n) : base + 1;
+  const goAyah = (t) => {
+    if (busy.current) return;
+    setMenu(false);
+    if (t < 0) { flash('Bu ilk ayet'); return; }
+    if (t >= n) { flash('Bu son ayet'); return; }
+    if (t > k) { flash('Önce sıradaki meyveyi topla'); return; }
+    busy.current = true;
+    const go = () => zoomOn(t, () => { busy.current = false; });
+    if (open != null) {                                     // acik kart / avuctaki meyve: ilerleme saymadan kapat
+      Animated.timing(cardOp, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => { setOpen(null); setInHand(false); T(hy, 0, 350).start(); go(); });
+    } else go();
+  };
+  const showAll = () => {
+    setMenu(false);
+    if (busy.current) return;
+    if (open != null) { Animated.timing(cardOp, { toValue: 0, duration: 200, useNativeDriver: true }).start(() => { setOpen(null); setInHand(false); T(hy, 0, 350).start(); }); }
+    setFocus(null); camTo(null).start();
+  };
+
   const a = open != null ? tree.page.ayat[open] : null;
   const handsTop = H * 0.82 - 0.39 * W * IMG_RATIO_HANDS;
 
@@ -115,28 +158,28 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
       <Image source={SCENE.backdrop} style={[StyleSheet.absoluteFill, { width: W, height: H }]} resizeMode="cover" />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,20,6,0.28)' }]} />
 
-      {/* agac */}
-      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: view.TW, height: view.TH, transformOrigin: [0, 0, 0], transform: [{ translateX: view.tx }, { translateY: view.ty }, { scale: view.s }] }}>
-        <Image source={TREE_IMG[tree.n]} style={{ width: view.TW, height: view.TH }} resizeMode="stretch" />
-      </View>
-
-      {/* meyveler: ustte 2, sonra 3, 4, 3 ... */}
-      {tree.page.ayat.map((ay, i) => {
-        const p = pos[i];
-        const state = i < k ? 'done' : i === k ? 'active' : 'locked';
-        if (inHand && i === k) return null;
-        return (
-          <Pressable key={i} onPress={() => pressFruit(i)} hitSlop={6}
-            style={{ position: 'absolute', left: p.x - PLW / 2, top: p.y, width: PLW, alignItems: 'center', opacity: state === 'locked' ? 0.72 : 1, zIndex: state === 'active' ? 5 : 1 }}>
-            <View style={state === 'active' ? { padding: 4, borderRadius: FD, borderWidth: 3, borderColor: '#ffd54f', backgroundColor: 'rgba(255,213,79,0.25)' } : { padding: 7 }}>
-              <FruitBall D={FD} k={i} state={state} />
-            </View>
-            <View style={[S.plate, state === 'active' && { borderColor: '#ffd54f', borderWidth: 2 }]}>
-              <Image source={IMG[ay.start.file]} style={{ width: PLW - 14, height: 24 }} resizeMode="contain" />
-            </View>
-          </Pressable>
-        );
-      })}
+      {/* kamera: agac + meyveler birlikte yakinlasir */}
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { transformOrigin: [0, 0, 0], transform: [{ translateX: cx }, { translateY: cy }, { scale: cs }] }]}>
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: view.TW, height: view.TH, transformOrigin: [0, 0, 0], transform: [{ translateX: view.tx }, { translateY: view.ty }, { scale: view.s }] }}>
+          <Image source={TREE_IMG[tree.n]} style={{ width: view.TW, height: view.TH }} resizeMode="stretch" />
+        </View>
+        {tree.page.ayat.map((ay, i) => {
+          const p = pos[i];
+          const state = i < k ? 'done' : i === k ? 'active' : 'locked';
+          if (inHand && i === k) return null;
+          return (
+            <Pressable key={i} onPress={() => pressFruit(i)} hitSlop={6}
+              style={{ position: 'absolute', left: p.x - PLW / 2, top: p.y, width: PLW, alignItems: 'center', opacity: state === 'locked' ? 0.72 : 1, zIndex: state === 'active' ? 5 : 1 }}>
+              <View style={state === 'active' || focus === i ? { padding: 4, borderRadius: FD, borderWidth: 3, borderColor: '#ffd54f', backgroundColor: 'rgba(255,213,79,0.25)' } : { padding: 7 }}>
+                <FruitBall D={FD} k={i} state={state} />
+              </View>
+              <View style={[S.plate, (state === 'active' || focus === i) && { borderColor: '#ffd54f', borderWidth: 2 }]}>
+                <Image source={IMG[ay.start.file]} style={{ width: PLW - 14, height: 24 }} resizeMode="contain" />
+              </View>
+            </Pressable>
+          );
+        })}
+      </Animated.View>
 
       {/* eller */}
       <Animated.Image pointerEvents="none" source={SCENE.palms} style={{ position: 'absolute', left: 0, top: handsTop, width: W, height: W * IMG_RATIO_HANDS, transform: [{ translateY: hy }] }} />
@@ -146,13 +189,13 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
         </View>
       )}
 
-      {/* ust cubuk */}
+      {/* ust cubuk: tek menu dugmesi */}
       <View style={S.hud}>
-        <Pressable style={S.hudBtn} onPress={onBack}><Text style={S.hudBtnTx}>← Bahçe</Text></Pressable>
+        <Pressable style={S.hudBtn} onPress={() => setMenu(!menu)}><Text style={S.hudBtnTx}>☰ Git</Text></Pressable>
         <Text style={S.hudTitle} numberOfLines={1}>{tree.n}. {tree.name}</Text>
         <Text style={S.hudCount}>{Math.min(k, n)}/{n}</Text>
       </View>
-      {hint && !open && <View style={S.hintBox} pointerEvents="none"><Text style={S.hintTx}>{hint}</Text></View>}
+      {hint && !open && !menu && <View style={S.hintBox} pointerEvents="none"><Text style={S.hintTx}>{hint}</Text></View>}
       {msg && <View style={S.hintBox} pointerEvents="none"><Text style={S.hintTx}>{msg}</Text></View>}
 
       {/* ayet karti */}
@@ -172,7 +215,7 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
       )}
 
       {/* bitis */}
-      {k >= n && !open && (
+      {k >= n && !open && !menu && (
         <Animated.View style={[S.finish, { opacity: finOp }]}>
           <Text style={S.finTitle}>Ağaç tamamlandı 🌿</Text>
           <Text style={S.finSub}>{n} meyvenin hepsini topladın</Text>
@@ -182,36 +225,46 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
           </View>
         </Animated.View>
       )}
+
+      {/* "nereye gitmek istersin" menusu */}
+      {menu && (
+        <Pressable style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.45)', zIndex: 300 }]} onPress={() => setMenu(false)}>
+          <View style={S.menu}>
+            <Text style={S.menuTitle}>Nereye gitmek istersin?</Text>
+            <Pressable style={[S.menuB, { backgroundColor: '#6b4226' }]} onPress={onBack}><Text style={S.menuTx}>🌳  Ana bahçeye dön</Text></Pressable>
+            <Pressable style={S.menuB} onPress={() => goAyah(prevT)}><Text style={S.menuTx}>◀  Önceki ayet{prevT >= 0 && prevT < n ? `  (${prevT + 1})` : ''}</Text></Pressable>
+            <Pressable style={S.menuB} onPress={() => goAyah(nextT)}><Text style={S.menuTx}>Sonraki ayet  ▶{nextT >= 0 && nextT < n ? `  (${nextT + 1})` : ''}</Text></Pressable>
+            <Pressable style={S.menuB} onPress={showAll}><Text style={S.menuTx}>🍎  Tüm meyveleri göster</Text></Pressable>
+            {hasNext && <Pressable style={S.menuB} onPress={() => { setMenu(false); leave('next'); }}><Text style={S.menuTx}>Sonraki ağaç  ⏭</Text></Pressable>}
+            <Pressable style={[S.menuB, { backgroundColor: 'transparent', borderColor: '#999' }]} onPress={() => setMenu(false)}><Text style={[S.menuTx, { color: '#ddd' }]}>Vazgeç</Text></Pressable>
+          </View>
+        </Pressable>
+      )}
     </Animated.View>
   );
 }
 
-// ---------------------------------------------------------------- bahce: panorama seridi, agaclar sagdan sola (dogal dagilim)
-const NT = 4, WW = PW * NT;                       // panorama aynali 4 parca = uzun serit
-const GAP = 300;                                  // agaclar arasi yatay mesafe (ust uste binebilir)
-const HZ = 0.53;                                  // panoramada ufuk cizgisi
-const TREE_H = H * 0.5;
-const XR = (NT - 0.5) * PW + 100;                 // 1. agac (kayisi) en sagda
-const WOB = [0, 0.05, -0.04, 0.06, -0.05, 0.03, -0.06, 0.04, -0.03, 0.05, -0.05, 0.04, -0.04, 0.06, -0.03, 0.05, -0.05, 0.03, -0.04, 0];
-// C seklinde: 1. agac yakin ve buyuk (sagda), orta agaclar uzakta ve kucuk (sol-orta), son agaclar yine yakin
-const DEPTH = Array.from({ length: 20 }, (_, i) => Math.max(0.5, Math.min(1, 1 - 0.46 * Math.sin(Math.PI * i / 19) + WOB[i])));
-const JIT = [0, 40, -30, 60, -20, 30, -50, 20, -40, 50, -10, 35, -45, 25, -30, 45, -20, 10, -35, 30];
-const treeX = (i) => XR - i * GAP + JIT[i];       // sagdan sola
-const treeSp = (i) => DEPTH[i];                   // yakin ve uzak karisik: bahce gibi
-const clampPan = (v) => Math.max(W - WW, Math.min(0, v));
-const panFor = (i) => clampPan(W / 2 - treeX(i));
+// ---------------------------------------------------------------- bahce: agaclar C seklinde (sagdan baslar), hepsi uzaktan gorunur
+// C: sag ustte 1. agac (kayisi) -> uste/sola dogru -> asagi -> sag altta 20. agac. Ufuk cizgisine yakin olanlar uzak = kucuk.
+const CCX = W * 0.53, CCY = H * 0.63, CRX = W * 0.37, CRY = H * 0.23;
+const ang = (i) => (50 + i * 260 / 19) * Math.PI / 180;
+const cpos = (i) => ({ x: CCX + CRX * Math.cos(ang(i)), y: CCY - CRY * Math.sin(ang(i)) });     // y = agac tabani
+const cdepth = (i) => (cpos(i).y - (CCY - CRY)) / (2 * CRY);                                      // 0 uzak .. 1 yakin
 const geo = (t, i) => {
-  const sp = treeSp(i); let h = TREE_H * sp, w = h * t.aspect;
-  if (w > W * 0.95 * sp) { w = W * 0.95 * sp; h = w / t.aspect; }
-  return { w, h, baseY: H * (HZ + 0.38 * sp) };
+  const h = H * (0.075 + 0.05 * cdepth(i)), w = h * t.aspect;
+  const p = cpos(i);
+  return { w, h, x: p.x, baseY: p.y };
 };
 
-const GardenTree = React.memo(function GardenTree({ t, i, onTap }) {
-  const { w, h, baseY } = geo(t, i);
+const GardenTree = React.memo(function GardenTree({ t, i, onTap, sel, done }) {
+  const { w, h, x, baseY } = geo(t, i);
+  const full = done >= t.page.ayat.length;
   return (
-    <Pressable onPress={() => onTap(i)} style={{ position: 'absolute', left: treeX(i) - w / 2, top: baseY - h, width: w, height: h, zIndex: Math.round(treeSp(i) * 100) }}>
-      <View style={{ position: 'absolute', left: w * 0.08, width: w * 0.84, bottom: -h * 0.02, height: h * 0.07, borderRadius: h, backgroundColor: 'rgba(10,20,5,0.34)' }} />
+    <Pressable onPress={() => onTap(i)} hitSlop={4} style={{ position: 'absolute', left: x - w / 2, top: baseY - h, width: w, height: h, zIndex: sel ? 900 : Math.round(baseY) }}>
+      <View style={{ position: 'absolute', left: w * 0.05, width: w * 0.9, bottom: -h * 0.03, height: h * 0.09, borderRadius: h, backgroundColor: sel ? 'rgba(255,213,79,0.85)' : 'rgba(10,20,5,0.34)' }} />
       <Image source={GARDEN_IMG[t.n]} style={{ width: w, height: h }} resizeMode="stretch" fadeDuration={0} />
+      <View style={[S.tagN, sel && { backgroundColor: '#e65100' }, full && { backgroundColor: '#2e7d32' }]}><Text style={S.tagTx}>{full ? '✓' : t.n}</Text></View>
+      {sel && <View style={S.tagName}><Text style={S.tagNameTx} numberOfLines={1}>{t.name}</Text></View>}
     </Pressable>
   );
 });
@@ -219,12 +272,11 @@ const GardenTree = React.memo(function GardenTree({ t, i, onTap }) {
 // ---------------------------------------------------------------- ana uygulama
 export default function App() {
   const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
-  const [st, setSt] = useState(0);                  // ortadaki / secili agac indeksi
+  const [st, setSt] = useState(0);                  // secili agac indeksi (0 = en sagdaki kayisi)
   const [tree, setTree] = useState(null);
   const [org, setOrg] = useState(null);             // yaklasma odak noktasi
   const [prog, setProg] = useState({});             // {agacNo: toplanan}
   const ap = useRef(new Animated.Value(0)).current;     // yaklasma 0..1
-  const zoom = useRef(new Animated.Value(1)).current;   // adimlarda hafif uzaklasip yakinlasma
   const busy = useRef(false);
   // kapi
   const gs = useRef(new Animated.Value(1)).current;
@@ -233,22 +285,6 @@ export default function App() {
   const ui = useRef(new Animated.Value(1)).current;
   const hh = useRef(new Animated.Value(0)).current;
   const gfade = useRef(new Animated.Value(0)).current;
-
-  // bahce: parmakla surukle, agaclar sagdan sola dizili
-  const panX = useRef(new Animated.Value(panFor(0))).current;
-  const panVal = useRef(panFor(0)); const panStart = useRef(0);
-  const nearest = (v) => { let b = 0, bd = 1e9; for (let i = 0; i < TREES.length; i++) { const d = Math.abs(W / 2 - (v + treeX(i))); if (d < bd) { bd = d; b = i; } } return b; };
-  const pan = useRef(PanResponder.create({
-    onMoveShouldSetPanResponder: (e, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy),
-    onPanResponderGrant: () => { panStart.current = panVal.current; },
-    onPanResponderMove: (e, g) => { const v = clampPan(panStart.current + g.dx); panVal.current = v; panX.setValue(v); },
-    onPanResponderRelease: () => setSt(nearest(panVal.current)),
-  })).current;
-  const goTo = (i, ms = 1300) => {
-    const ni = Math.max(0, Math.min(TREES.length - 1, i)); setSt(ni);
-    const v = panFor(ni); panVal.current = v; busy.current = true;
-    Animated.parallel([T(panX, v, ms), Animated.sequence([T(zoom, 0.88, ms / 2), T(zoom, 1, ms / 2)])]).start(() => { busy.current = false; });
-  };
 
   useEffect(() => { Animated.timing(gfade, { toValue: 1, duration: 1000, useNativeDriver: true }).start(); }, []);
 
@@ -259,56 +295,50 @@ export default function App() {
       T(zs, 1, 2600), T(hh, -H * 0.12, 1600),
     ]).start(() => setMode('garden'));
   };
-  const step = (dir) => { if (busy.current) return; goTo(st + dir); };
+  const step = (dir) => { if (busy.current) return; setSt((s) => Math.max(0, Math.min(TREES.length - 1, s + dir))); };
   const approachAt = useRef(null);
   approachAt.current = (i) => {
     if (busy.current || mode !== 'garden') return;
     busy.current = true; setSt(i);
-    const v = panFor(i); panVal.current = v;
     const g = geo(TREES[i], i);
-    T(panX, v, 700).start(() => {
-      setOrg([W / 2, g.baseY - g.h * 0.55, 0]);
-      requestAnimationFrame(() => T(ap, 1, 1000, { easing: Easing.in(Easing.cubic) }).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; }));
-    });
+    setOrg([g.x, g.baseY - g.h * 0.5, 0]);
+    requestAnimationFrame(() => T(ap, 1, 1100, { easing: Easing.in(Easing.cubic) }).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; }));
   };
-  const onTap = useRef((i) => approachAt.current(i)).current;
+  const tapTree = useRef(null);
+  tapTree.current = (i) => { if (i === st) approachAt.current(i); else setSt(i); };      // once sec, sonra yaklas
+  const onTap = useRef((i) => tapTree.current(i)).current;
   const onLeave = (next) => {
-    if (next) { const ns = Math.min(TREES.length - 1, tree.n); setSt(ns); const v = panFor(ns); panVal.current = v; panX.setValue(v); }
+    if (next) setSt(Math.min(TREES.length - 1, tree.n));
     ap.setValue(0); setOrg(null);
   };
-  const onDone = (next) => { setMode('garden'); busy.current = false; };
+  const onDone = () => { setMode('garden'); busy.current = false; };
   const onProgress = (n, c) => setProg((p) => ({ ...p, [n]: c }));
 
   const cur = TREES[st];
   const done = prog[cur.n] || 0;
   const handsTop = H * 0.82 - 0.39 * W * IMG_RATIO_HANDS;
-  const showTrees = mode === 'garden' || mode === 'tree';
-  const dolly = ap.interpolate({ inputRange: [0, 1], outputRange: [1, 2.6] });
-  const camScale = Animated.multiply(Animated.multiply(zoom, dolly), zs);
+  const showTrees = mode !== 'gate';
+  const dolly = ap.interpolate({ inputRange: [0, 1], outputRange: [1, 5] });
+  const camScale = Animated.multiply(dolly, zs);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#12210f' }}>
       <StatusBar hidden />
-      {/* panorama seridi: kapi sahnesinde ve bahcede */}
+      {/* bahce: zemin + C seklinde agaclar */}
       <Animated.View style={[StyleSheet.absoluteFill, { transformOrigin: org || [W / 2, H / 2, 0], transform: [{ scale: camScale }] }]}>
-        <Animated.View {...pan.panHandlers} style={{ position: 'absolute', left: 0, top: 0, width: WW, height: PH, transform: [{ translateX: panX }] }}>
-          {Array.from({ length: NT }, (_, j) => (
-            <Image key={j} source={SCENE.pano} resizeMode="cover" fadeDuration={0}
-              style={{ position: 'absolute', left: j * PW, top: 0, width: PW, height: PH, transform: [{ scaleX: (NT - 1 - j) % 2 === 1 ? -1 : 1 }] }} />
-          ))}
-          {showTrees && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} onTap={onTap} />)}
-        </Animated.View>
+        <Image source={SCENE.ground} resizeMode="cover" fadeDuration={0} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }} />
+        {showTrees && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} onTap={onTap} sel={mode === 'garden' && i === st} done={prog[t.n] || 0} />)}
       </Animated.View>
       {mode === 'garden' && (
         <>
           <View style={S.gardenTop} pointerEvents="none">
-            <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi · kaydırarak bak</Text>
+            <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi · sağdaki kayısıdan başla</Text>
             <Text style={S.gSub}>{cur.n}. {cur.name} ağacı  ·  {done}/{cur.page.ayat.length}{done >= cur.page.ayat.length ? '  ✓' : ''}</Text>
           </View>
           <View style={S.walkBar}>
-            <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => step(-1)}><Text style={S.walkTx}>▶ Önceki</Text></Pressable>
+            <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => step(-1)}><Text style={S.walkTx}>‹ Önceki</Text></Pressable>
             <Pressable style={[S.walkB, S.walkMain]} onPress={() => approachAt.current(st)}><Text style={[S.walkTx, { fontSize: 16 }]}>Ağaca yaklaş</Text></Pressable>
-            <Pressable style={[S.walkB, st === TREES.length - 1 && { opacity: 0.35 }]} onPress={() => step(1)}><Text style={S.walkTx}>Sonraki ◀</Text></Pressable>
+            <Pressable style={[S.walkB, st === TREES.length - 1 && { opacity: 0.35 }]} onPress={() => step(1)}><Text style={S.walkTx}>Sonraki ›</Text></Pressable>
           </View>
         </>
       )}
@@ -364,6 +394,14 @@ const S = StyleSheet.create({
   okBtn: { backgroundColor: '#e65100', borderRadius: 24, paddingVertical: 12, alignItems: 'center', marginTop: 10 },
   okTx: { color: '#fff', fontWeight: '800', fontSize: 16 },
   finish: { position: 'absolute', left: 16, right: 16, bottom: 40, backgroundColor: 'rgba(255,248,231,0.96)', borderColor: '#6b4226', borderWidth: 3, borderRadius: 20, padding: 16, alignItems: 'center' },
+  menu: { position: 'absolute', left: 24, right: 24, top: H * 0.16, backgroundColor: 'rgba(255,248,231,0.97)', borderColor: '#6b4226', borderWidth: 3, borderRadius: 20, padding: 14 },
+  menuTitle: { color: '#3e2723', fontWeight: '800', fontSize: 17, textAlign: 'center', marginBottom: 8 },
+  menuB: { backgroundColor: '#e65100', borderRadius: 14, paddingVertical: 13, paddingHorizontal: 14, marginTop: 8, borderWidth: 1.5, borderColor: '#6b4226' },
+  menuTx: { color: '#fff', fontWeight: '800', fontSize: 16, textAlign: 'center' },
+  tagN: { position: 'absolute', left: '50%', marginLeft: -9, top: '38%', minWidth: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(30,20,10,0.75)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
+  tagTx: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  tagName: { position: 'absolute', top: '102%', alignSelf: 'center', backgroundColor: '#e65100', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2, minWidth: 54, alignItems: 'center' },
+  tagNameTx: { color: '#fff', fontSize: 11, fontWeight: '800' },
   finTitle: { color: '#2e7d32', fontWeight: '800', fontSize: 22 },
   finSub: { color: '#3e2723', fontSize: 14, marginTop: 4 },
 });
