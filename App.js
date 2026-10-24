@@ -20,7 +20,7 @@ const COLORS = [
 const PANO_RATIO = 2576 / 1093;
 const PH = H, PW = H * PANO_RATIO;               // panorama ekran yuksekligine oturur
 // meyveler YUKARIDAN ASAGI: 1. ayet agacin en ustunde, sonuncusu en altta
-const TREES = TREES_XY.map((t) => ({ ...t, anch: t.anch.slice().reverse(), page: DATA.pages[t.n - 1] }));
+const TREES = TREES_XY.map((t) => ({ ...t, page: DATA.pages[t.n - 1] }));
 
 // ---------------------------------------------------------------- meyve
 function FruitBall({ D, k, state }) {
@@ -42,7 +42,18 @@ function FruitBall({ D, k, state }) {
   );
 }
 
-// ---------------------------------------------------------------- agac ekrani (yukaridan asagi)
+// ---------------------------------------------------------------- agac ekrani: altindan bakis, butun meyveler gorunur
+// meyve dizilimi ustten alta: 2, 3, 4, 3 ... (12 ayet), ayet sayisina gore
+const PAT = { 1: [1], 2: [2], 3: [3], 4: [2, 2], 5: [2, 3], 6: [2, 4], 7: [2, 3, 2], 8: [2, 3, 3], 9: [2, 3, 4], 10: [2, 3, 3, 2], 11: [2, 3, 4, 2], 12: [2, 3, 4, 3] };
+const FD = Math.min(66, W * 0.165);               // meyve capi
+const PLW = W * 0.235;                            // plaka genisligi
+function fruitLayout(n) {
+  const rows = PAT[n] || [Math.ceil(n / 2), n - Math.ceil(n / 2)];
+  const rowStep = FD + 44, y0 = H * 0.19, out = [];
+  rows.forEach((c, r) => { for (let j = 0; j < c; j++) out.push({ x: W / 2 + (j - (c - 1) / 2) * PLW * 1.02, y: y0 + r * rowStep }); });
+  return out;
+}
+
 function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext }) {
   const n = tree.page.ayat.length;
   const [k, setK] = useState(Math.min(startK, n));        // sirada olan meyve (n = hepsi toplandi)
@@ -50,47 +61,25 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   const [inHand, setInHand] = useState(false);             // meyve avucta mi
   const [msg, setMsg] = useState(null);
   const busy = useRef(false);
+  const fade = useRef(new Animated.Value(0)).current;
+  const hy = useRef(new Animated.Value(0)).current;        // el yukselmesi
+  const cardOp = useRef(new Animated.Value(0)).current;
+  const finOp = useRef(new Animated.Value(0)).current;
   const leave = (then) => { if (busy.current) return; busy.current = true; onLeave(then === 'next'); Animated.timing(fade, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => onDone(then === 'next')); };
   const onBack = () => leave('back');
 
-  // olculer
-  const { TW, TH, D } = useMemo(() => {
-    let th = H * 1.12, tw = th * tree.aspect;
-    if (tw < W * 1.3) { tw = W * 1.3; th = tw / tree.aspect; }
-    return { TW: tw, TH: th, D: Math.max(56, Math.min(80, tw * 0.09)) };
+  // agac: tacin ekrani doldurdugu, alttan bakis (govde altta)
+  const view = useMemo(() => {
+    const TW = W, TH = W / tree.aspect;
+    const [cx, cy, cw, ch] = tree.crown;
+    const s = Math.min(1.12 / cw, (H * 0.62) / (ch * TH));
+    return { TW, TH, s, tx: W / 2 - s * cx * TW, ty: H * 0.34 - s * cy * TH };
   }, [tree]);
-  const s0 = Math.min((W * 0.96) / TW, (H * 0.64) / TH);
-  const tx = useRef(new Animated.Value((W - s0 * TW) / 2)).current;
-  const ty = useRef(new Animated.Value(H * 0.14 + (H * 0.68 - s0 * TH) / 2)).current;
-  const sc = useRef(new Animated.Value(s0)).current;
-  const fade = useRef(new Animated.Value(0)).current;
-  const hy = useRef(new Animated.Value(0)).current;        // el yukselmesi
-  const palmOp = useRef(new Animated.Value(1)).current;
-  const fistOp = useRef(new Animated.Value(0)).current;
-  const cardOp = useRef(new Animated.Value(0)).current;
-  const finOp = useRef(new Animated.Value(0)).current;
-
-  const focus = (idx, ms = 1300, s = 1, cb) => {
-    const [x, y] = tree.anch[Math.min(idx, n - 1)];
-    Animated.parallel([T(tx, W / 2 - s * x * TW, ms), T(ty, H * 0.42 - s * y * TH, ms), T(sc, s, ms)]).start(cb);
-  };
-  const overview = (ms = 1200, cb) =>
-    Animated.parallel([T(tx, (W - s0 * TW) / 2, ms), T(ty, H * 0.14 + (H * 0.68 - s0 * TH) / 2, ms), T(sc, s0, ms)]).start(cb);
-
-  // tirmanis: yumruk eller yukari uzanir, kamera meyveye cikar
-  const climbTo = (idx, cb) => {
-    busy.current = true;
-    Animated.parallel([T(palmOp, 0, 250), T(fistOp, 1, 250), Animated.sequence([T(hy, -H * 0.1, 650), T(hy, 0, 650)])]).start();
-    focus(idx, 1300, 1, () => {
-      Animated.parallel([T(fistOp, 0, 250), T(palmOp, 1, 250)]).start(() => { busy.current = false; cb && cb(); });
-    });
-  };
+  const pos = useMemo(() => fruitLayout(n), [n]);
 
   useEffect(() => {
-    T(fade, 1, 600).start();
-    if (k >= n) { overview(900); Animated.timing(finOp, { toValue: 1, duration: 500, useNativeDriver: true }).start(); return; }
-    const t = setTimeout(() => climbTo(k), 1100);          // once butun agac, sonra alt meyveye yaklas
-    return () => clearTimeout(t);
+    T(fade, 1, 700).start();
+    if (k >= n) Animated.timing(finOp, { toValue: 1, duration: 500, useNativeDriver: true }).start();
   }, []);
 
   const hint = k >= n ? null : `Parlayan ${k + 1}. meyveyi (${COLORS[k % 5].name.toLowerCase()}) kopar`;
@@ -98,10 +87,9 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   const pressFruit = (i) => {
     if (busy.current) return;
     if (i < k) { setInHand(false); setOpen(i); Animated.timing(cardOp, { toValue: 1, duration: 300, useNativeDriver: true }).start(); return; }
-    if (i > k) { setMsg('Önce alttaki meyveyi topla'); setTimeout(() => setMsg(null), 1400); return; }
-    // i === k : meyveyi kopar
-    busy.current = true;
-    Animated.parallel([T(palmOp, 1, 100), T(hy, -H * 0.26, 650)]).start(() => {
+    if (i > k) { setMsg('Önce sıradaki meyveyi topla'); setTimeout(() => setMsg(null), 1400); return; }
+    busy.current = true;                                    // i === k : meyveyi kopar
+    T(hy, -H * 0.26, 650).start(() => {
       setInHand(true); setOpen(i);
       Animated.timing(cardOp, { toValue: 1, duration: 350, useNativeDriver: true }).start(() => { busy.current = false; });
     });
@@ -115,50 +103,46 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
       if (!wasHand) return;
       setInHand(false);
       const nk = k + 1; setK(nk); onProgress(tree.n, nk);
-      Animated.timing(hy, { toValue: 0, duration: 450, easing: ease, useNativeDriver: true }).start(() => {
-        if (nk < n) climbTo(nk);
-        else { overview(1400); Animated.timing(finOp, { toValue: 1, duration: 600, useNativeDriver: true }).start(); }
-      });
+      T(hy, 0, 450).start(() => { if (nk >= n) Animated.timing(finOp, { toValue: 1, duration: 600, useNativeDriver: true }).start(); });
     });
   };
 
   const a = open != null ? tree.page.ayat[open] : null;
   const handsTop = H * 0.82 - 0.39 * W * IMG_RATIO_HANDS;
-  const fistTop = H * 0.74 - 0.17 * W * IMG_RATIO_HANDS;
 
   return (
     <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade, backgroundColor: '#12210f' }]}>
       <Image source={SCENE.backdrop} style={[StyleSheet.absoluteFill, { width: W, height: H }]} resizeMode="cover" />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,20,6,0.28)' }]} />
 
-      {/* agac + meyveler */}
-      <Animated.View style={{ position: 'absolute', left: 0, top: 0, width: TW, height: TH, transformOrigin: '0% 0%', transform: [{ translateX: tx }, { translateY: ty }, { scale: sc }] }}>
-        <View style={{ position: 'absolute', left: TW * 0.05, width: TW * 0.9, top: TH * 0.965, height: TH * 0.06, borderRadius: TH, backgroundColor: 'rgba(0,0,0,0.35)' }} />
-        <Image source={TREE_IMG[tree.n]} style={{ width: TW, height: TH }} resizeMode="stretch" />
-        {tree.page.ayat.map((ay, i) => {
-          const [x, y] = tree.anch[i];
-          const state = i < k ? 'done' : i === k ? 'active' : 'locked';
-          if (inHand && i === k) return null;
-          return (
-            <Pressable key={i} onPress={() => pressFruit(i)} hitSlop={10}
-              style={{ position: 'absolute', left: x * TW - 56, top: y * TH - D / 2, width: 112, alignItems: 'center', opacity: state === 'locked' ? 0.6 : 1, zIndex: state === 'active' ? 5 : 1 }}>
-              <View style={state === 'active' ? { padding: 5, borderRadius: D, borderWidth: 3, borderColor: '#ffd54f', backgroundColor: 'rgba(255,213,79,0.25)' } : null}>
-                <FruitBall D={D} k={i} state={state} />
-              </View>
-              <View style={[S.plate, state === 'active' && { borderColor: '#ffd54f', borderWidth: 2 }]}>
-                <Image source={IMG[ay.start.file]} style={{ width: 98, height: 26 }} resizeMode="contain" />
-              </View>
-            </Pressable>
-          );
-        })}
-      </Animated.View>
+      {/* agac */}
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: view.TW, height: view.TH, transformOrigin: [0, 0, 0], transform: [{ translateX: view.tx }, { translateY: view.ty }, { scale: view.s }] }}>
+        <Image source={TREE_IMG[tree.n]} style={{ width: view.TW, height: view.TH }} resizeMode="stretch" />
+      </View>
+
+      {/* meyveler: ustte 2, sonra 3, 4, 3 ... */}
+      {tree.page.ayat.map((ay, i) => {
+        const p = pos[i];
+        const state = i < k ? 'done' : i === k ? 'active' : 'locked';
+        if (inHand && i === k) return null;
+        return (
+          <Pressable key={i} onPress={() => pressFruit(i)} hitSlop={6}
+            style={{ position: 'absolute', left: p.x - PLW / 2, top: p.y, width: PLW, alignItems: 'center', opacity: state === 'locked' ? 0.72 : 1, zIndex: state === 'active' ? 5 : 1 }}>
+            <View style={state === 'active' ? { padding: 4, borderRadius: FD, borderWidth: 3, borderColor: '#ffd54f', backgroundColor: 'rgba(255,213,79,0.25)' } : { padding: 7 }}>
+              <FruitBall D={FD} k={i} state={state} />
+            </View>
+            <View style={[S.plate, state === 'active' && { borderColor: '#ffd54f', borderWidth: 2 }]}>
+              <Image source={IMG[ay.start.file]} style={{ width: PLW - 14, height: 24 }} resizeMode="contain" />
+            </View>
+          </Pressable>
+        );
+      })}
 
       {/* eller */}
-      <Animated.Image pointerEvents="none" source={SCENE.palms} style={{ position: 'absolute', left: 0, top: handsTop, width: W, height: W * IMG_RATIO_HANDS, opacity: palmOp, transform: [{ translateY: hy }] }} />
-      <Animated.Image pointerEvents="none" source={SCENE.fists} style={{ position: 'absolute', left: 0, top: fistTop, width: W, height: W * IMG_RATIO_HANDS, opacity: fistOp, transform: [{ translateY: hy }] }} />
+      <Animated.Image pointerEvents="none" source={SCENE.palms} style={{ position: 'absolute', left: 0, top: handsTop, width: W, height: W * IMG_RATIO_HANDS, transform: [{ translateY: hy }] }} />
       {inHand && (
-        <View pointerEvents="none" style={{ position: 'absolute', left: W / 2 - D * 0.8, top: H * 0.66 - D * 0.8 }}>
-          <FruitBall D={D * 1.6} k={open} state="active" />
+        <View pointerEvents="none" style={{ position: 'absolute', left: W / 2 - FD * 0.8, top: H * 0.66 - FD * 0.8 }}>
+          <FruitBall D={FD * 1.6} k={open} state="active" />
         </View>
       )}
 
@@ -208,7 +192,9 @@ const GAP = 300;                                  // agaclar arasi yatay mesafe 
 const HZ = 0.53;                                  // panoramada ufuk cizgisi
 const TREE_H = H * 0.5;
 const XR = (NT - 0.5) * PW + 100;                 // 1. agac (kayisi) en sagda
-const DEPTH = [1.0, 0.74, 0.9, 0.62, 0.82, 0.7, 0.97, 0.6, 0.86, 0.72, 0.94, 0.64, 0.8, 0.68, 0.9, 0.6, 0.78, 0.7, 0.88, 0.64];
+const WOB = [0, 0.05, -0.04, 0.06, -0.05, 0.03, -0.06, 0.04, -0.03, 0.05, -0.05, 0.04, -0.04, 0.06, -0.03, 0.05, -0.05, 0.03, -0.04, 0];
+// C seklinde: 1. agac yakin ve buyuk (sagda), orta agaclar uzakta ve kucuk (sol-orta), son agaclar yine yakin
+const DEPTH = Array.from({ length: 20 }, (_, i) => Math.max(0.5, Math.min(1, 1 - 0.46 * Math.sin(Math.PI * i / 19) + WOB[i])));
 const JIT = [0, 40, -30, 60, -20, 30, -50, 20, -40, 50, -10, 35, -45, 25, -30, 45, -20, 10, -35, 30];
 const treeX = (i) => XR - i * GAP + JIT[i];       // sagdan sola
 const treeSp = (i) => DEPTH[i];                   // yakin ve uzak karisik: bahce gibi

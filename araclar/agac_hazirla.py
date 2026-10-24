@@ -9,7 +9,7 @@ for t in data['trees']:
     n = t['n']; ayat = len(data['pages'][n-1]['ayat'])
     im = Image.open(f'agaclar/tree{n:02d}.png').convert('RGBA')
     # agaclar/treeNN.png video_kareleri.py tarafindan zaten kirpildi (animasyon kareleriyle ayni kutu)
-    im.save(f'assets/agac/{n:02d}.png', optimize=True)
+    im.save(f'assets/agac/{n:02d}.webp', quality=90, alpha_quality=100, method=4); im.resize((round(im.width*600/im.height), 600), Image.LANCZOS).save(f'assets/bahce/{n:02d}.webp', quality=82, method=4)
     arr = np.asarray(im).astype(int); H, W = arr.shape[:2]
     alpha = arr[..., 3] > 200
     leaf = alpha & (arr[..., 1] >= arr[..., 0]-3)
@@ -33,7 +33,11 @@ for t in data['trees']:
             if best: break
         if not best: best = (W*0.5, y)
         pts.append(best)
-    out.append({'n': n, 'name': t['name'], 'w': im.width, 'h': im.height, 'aspect': im.width/im.height,
+    cols = np.where(leaf.any(0))[0]
+    x0, x1 = np.quantile(cols, 0.01), np.quantile(cols, 0.99)
+    y0, y1 = np.quantile(rows, 0.02), np.quantile(rows, 0.85)
+    crown = [round(float((x0+x1)/2/W), 4), round(float((y0+y1)/2/H), 4), round(float((x1-x0)/W), 4), round(float((y1-y0)/H), 4)]
+    out.append({'n': n, 'crown': crown, 'name': t['name'], 'w': im.width, 'h': im.height, 'aspect': im.width/im.height,
                 'anch': [[round(x/W, 4), round(y/H, 4)] for x, y in pts]})
     print(n, t['name'], im.size, ayat)
 json.dump(out, open('src/trees.json', 'w'), ensure_ascii=False)
