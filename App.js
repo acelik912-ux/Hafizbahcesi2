@@ -244,36 +244,39 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   );
 }
 
-// ---------------------------------------------------------------- bahce: agaclar C seklinde (sagdan baslar), hepsi uzaktan gorunur
-// C: sag ustte 1. agac (kayisi) -> uste/sola dogru -> asagi -> sag altta 20. agac. Ufuk cizgisine yakin olanlar uzak = kucuk.
-const CCX = W * 0.53, CCY = H * 0.63, CRX = W * 0.37, CRY = H * 0.23;
-const ang = (i) => (50 + i * 260 / 19) * Math.PI / 180;
-const cpos = (i) => ({ x: CCX + CRX * Math.cos(ang(i)), y: CCY - CRY * Math.sin(ang(i)) });     // y = agac tabani
-const cdepth = (i) => (cpos(i).y - (CCY - CRY)) / (2 * CRY);                                      // 0 uzak .. 1 yakin
-// yuruyus gorunumu: yolun iki yaninda agac sirasi; 1-10 sagda yakindan uzaga, 11-20 solda uzaktan yakina (yine C)
-const walkGeo = (t, i) => {
-  const right = i < 10, k = right ? i : 19 - i;            // k: 0 yakin .. 9 uzak
-  const s = Math.pow(1 - k / 10.5, 1.35);                  // 1 yakin .. ~0.1 uzak
-  const h = H * (0.05 + 0.27 * s);
-  const w = Math.min(h * t.aspect, W * 0.55);
-  const x = W * 0.5 + (right ? 1 : -1) * (W * 0.07 + W * 0.30 * s) + (right ? 1 : -1) * w * 0.15;
-  return { w, h: w / t.aspect, x, baseY: H * (0.405 + 0.5 * s) };
+// ---------------------------------------------------------------- bahce: yolun iki yaninda agac sirasi (giris fotografi)
+// Fotograftaki yakin agaclar dokunma alanidir (sagda kayisi, arkasinda incir; solda elma, armut, portakal).
+// Diger agaclar yolun uzak kismina kucuk olarak dizilir.
+const BGW = 1438, BGH = 2576, BSC = Math.max(W / BGW, H / BGH), BOX = (W - BGW * BSC) / 2, BOY = (H - BGH * BSC) / 2;
+const bx = (f) => BOX + f * BGW * BSC, by = (f) => BOY + f * BGH * BSC;
+const SPOTS = {                                   // agac indeksi -> fotograf uzerindeki alan [sol, ust, sag, alt] (oran)
+  0: [0.66, 0.02, 1.0, 0.70],                     // kayisi (sagda yakin)
+  1: [0.54, 0.30, 0.80, 0.58],                    // incir (kayisinin arkasi)
+  4: [0.0, 0.08, 0.20, 0.55],                     // elma (solda yakin)
+  7: [0.14, 0.20, 0.42, 0.42],                    // armut
+  9: [0.22, 0.42, 0.50, 0.53],                    // portakal
 };
-const geoC = (t, i) => {
-  const h = H * (0.075 + 0.05 * cdepth(i)), w = h * t.aspect;
-  const p = cpos(i);
-  return { w, h, x: p.x, baseY: p.y };
+const FAR = [2, 3, 5, 6, 8, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19];      // uzak siradakiler (yaklastikca yakin)
+const geo = (t, i) => {
+  const sp = SPOTS[i];
+  if (sp) { const l = bx(sp[0]), r = bx(sp[2]), tp = by(sp[1]), bt = by(sp[3]); return { spot: true, w: r - l, h: bt - tp, x: (l + r) / 2, baseY: bt }; }
+  const m = FAR.indexOf(i), row = Math.floor(m / 2), left = m % 2 === 0, u = 1 - row / 7;      // u: 1 yakin .. 0 uzak
+  const h = H * (0.034 + 0.05 * u), w = h * t.aspect;
+  return { spot: false, w, h, x: bx(0.5) + (left ? -1 : 1) * W * (0.05 + 0.2 * u), baseY: by(0.535 + 0.105 * u) };
 };
-const geo = (t, i, vw) => (vw === 'walk' ? walkGeo(t, i) : geoC(t, i));
 
-const GardenTree = React.memo(function GardenTree({ t, i, onTap, sel, done, vw }) {
-  const { w, h, x, baseY } = geo(t, i, vw);
+const GardenTree = React.memo(function GardenTree({ t, i, onTap, sel, done }) {
+  const { w, h, x, baseY, spot } = geo(t, i);
   const full = done >= t.page.ayat.length;
   return (
-    <Pressable onPress={() => onTap(i)} hitSlop={4} style={{ position: 'absolute', left: x - w / 2, top: baseY - h, width: w, height: h, zIndex: sel ? 900 : Math.round(baseY) }}>
-      <View style={{ position: 'absolute', left: w * 0.05, width: w * 0.9, bottom: -h * 0.03, height: h * 0.09, borderRadius: h, backgroundColor: sel ? 'rgba(255,213,79,0.85)' : 'rgba(10,20,5,0.34)' }} />
-      <Image source={GARDEN_IMG[t.n]} style={{ width: w, height: h }} resizeMode="stretch" fadeDuration={0} />
-      <View style={[S.tagN, sel && { backgroundColor: '#e65100' }, full && { backgroundColor: '#2e7d32' }]}><Text style={S.tagTx}>{full ? '✓' : t.n}</Text></View>
+    <Pressable onPress={() => onTap(i)} hitSlop={4} style={{ position: 'absolute', left: x - w / 2, top: baseY - h, width: w, height: h, zIndex: sel ? 900 : spot ? (i === 1 ? 700 : 600) : Math.round(baseY) }}>
+      {spot
+        ? <View style={[{ flex: 1, borderRadius: 26 }, sel && { borderWidth: 3, borderColor: '#ffd54f', backgroundColor: 'rgba(255,213,79,0.12)' }]} />
+        : (<>
+            <View style={{ position: 'absolute', left: w * 0.05, width: w * 0.9, bottom: -h * 0.03, height: h * 0.09, borderRadius: h, backgroundColor: sel ? 'rgba(255,213,79,0.85)' : 'rgba(10,20,5,0.34)' }} />
+            <Image source={GARDEN_IMG[t.n]} style={{ width: w, height: h }} resizeMode="stretch" fadeDuration={0} />
+          </>)}
+      <View style={[spot ? S.tagSpot : S.tagN, sel && { backgroundColor: '#e65100' }, full && { backgroundColor: '#2e7d32' }]}><Text style={S.tagTx}>{full ? '✓' : t.n}</Text></View>
       {sel && <View style={S.tagName}><Text style={S.tagNameTx} numberOfLines={1}>{t.name}</Text></View>}
     </Pressable>
   );
@@ -282,7 +285,6 @@ const GardenTree = React.memo(function GardenTree({ t, i, onTap, sel, done, vw }
 // ---------------------------------------------------------------- ana uygulama
 export default function App() {
   const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
-  const [vw, setVw] = useState('c');             // c = ustten C gorunumu, walk = yuruyus gorunumu
   const [st, setSt] = useState(0);                  // secili agac indeksi (0 = en sagdaki kayisi)
   const [tree, setTree] = useState(null);
   const [org, setOrg] = useState(null);             // yaklasma odak noktasi
@@ -311,7 +313,7 @@ export default function App() {
   approachAt.current = (i) => {
     if (busy.current || mode !== 'garden') return;
     busy.current = true; setSt(i);
-    const g = geo(TREES[i], i, vw);
+    const g = geo(TREES[i], i);
     setOrg([g.x, g.baseY - g.h * 0.5, 0]);
     requestAnimationFrame(() => T(ap, 1, 1100, { easing: Easing.in(Easing.cubic) }).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; }));
   };
@@ -337,8 +339,8 @@ export default function App() {
       <StatusBar hidden />
       {/* bahce: zemin + C seklinde agaclar */}
       <Animated.View style={[StyleSheet.absoluteFill, { transformOrigin: org || [W / 2, H / 2, 0], transform: [{ scale: camScale }] }]}>
-        <Image source={SCENE.ground} resizeMode="cover" fadeDuration={0} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }} />
-        {showTrees && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} onTap={onTap} sel={mode === 'garden' && i === st} done={prog[t.n] || 0} vw={vw} />)}
+        <Image source={SCENE.entry} resizeMode="cover" fadeDuration={0} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }} />
+        {showTrees && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} onTap={onTap} sel={mode === 'garden' && i === st} done={prog[t.n] || 0} />)}
       </Animated.View>
       {mode === 'garden' && (
         <>
@@ -346,7 +348,6 @@ export default function App() {
             <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi · sağdaki kayısıdan başla</Text>
             <Text style={S.gSub}>{cur.n}. {cur.name} ağacı  ·  {done}/{cur.page.ayat.length}{done >= cur.page.ayat.length ? '  ✓' : ''}</Text>
           </View>
-          <Pressable style={S.viewBtn} onPress={() => setVw(vw === 'c' ? 'walk' : 'c')}><Text style={S.walkTx}>{vw === 'c' ? '👣 Yürüyüş görünümü' : '🗺 C görünümü'}</Text></Pressable>
           <View style={S.walkBar}>
             <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => step(-1)}><Text style={S.walkTx}>‹ Önceki</Text></Pressable>
             <Pressable style={[S.walkB, S.walkMain]} onPress={() => approachAt.current(st)}><Text style={[S.walkTx, { fontSize: 16 }]}>Ağaca yaklaş</Text></Pressable>
@@ -413,6 +414,7 @@ const S = StyleSheet.create({
   menuTx: { color: '#fff', fontWeight: '800', fontSize: 16, textAlign: 'center' },
   tagN: { position: 'absolute', left: '50%', marginLeft: -9, top: '38%', minWidth: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(30,20,10,0.75)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   tagTx: { color: '#fff', fontSize: 10, fontWeight: '800' },
+  tagSpot: { position: 'absolute', right: 8, top: 8, minWidth: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(30,20,10,0.75)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
   tagName: { position: 'absolute', top: '102%', alignSelf: 'center', backgroundColor: '#e65100', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2, minWidth: 54, alignItems: 'center' },
   tagNameTx: { color: '#fff', fontSize: 11, fontWeight: '800' },
   finTitle: { color: '#2e7d32', fontWeight: '800', fontSize: 22 },
