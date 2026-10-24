@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Hafız Bahçesi - 20 Ağaç İnteraktif Tırmanma</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    body, html { width: 100%; height: 100%; overflow: hidden; font-family: 'Segoe UI', Tahoma, sans-serif; background: #112211; }
+
+    #app-container {
+      position: relative; width: 100vw; height: 100vh; max-width: 500px; margin: 0 auto;
+      overflow: hidden; background: #2e5a27; box-shadow: 0 0 40px rgba(0,0,0,0.9);
+    }
+
+    .hud-bar {
+      position: absolute; top: 14px; left: 4%; width: 92%; z-index: 100;
+      background: linear-gradient(180deg, #f5deb3, #deb887);
+      border: 3px solid #6b4226; border-radius: 14px; padding: 12px 16px;
+      display: flex; justify-content: space-between; align-items: center;
+      box-shadow: 0 5px 15px rgba(0,0,0,0.4); color: #3e2723; font-weight: bold; font-size: 15px;
+    }
+    .hud-btn {
+      background: #6b4226; color: #fff8dc; border: none; padding: 6px 12px;
+      border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 13px; display: none;
+    }
+
+    #garden-world {
+      position: absolute; width: 100%; height: 100%;
+      background-image: url('bahce.jpg'), linear-gradient(180deg, #fceabb 0%, #c8e6c9 45%, #388e3c 100%);
+      background-size: cover; background-position: center;
+      overflow: hidden; transition: opacity 0.7s ease, transform 0.8s ease;
+    }
+    #garden-corridor { position: absolute; width: 100%; height: 100%; }
+
+    .garden-tree-node {
+      position: absolute; cursor: pointer; text-align: center;
+      transition: all 0.4s ease; transform-origin: bottom center;
+    }
+    .garden-tree-node:hover { transform: scale(1.06); filter: drop-shadow(0 0 15px #ffd54f); }
+    
+    .tree-wood-sign {
+      background: linear-gradient(180deg, #f3d69b, #d4a359);
+      border: 3px solid #5c3a21; color: #3e2723; padding: 8px 18px;
+      border-radius: 10px; font-size: 15px; font-weight: bold;
+      box-shadow: 0 6px 14px rgba(0,0,0,0.5); display: inline-block;
+    }
+
+    .walk-controls {
+      position: absolute; bottom: 155px; left: 50%; transform: translateX(-50%);
+      z-index: 80; display: flex; gap: 15px; width: 85%; justify-content: center;
+    }
+    .walk-btn {
+      background: rgba(107, 66, 38, 0.92); color: #fff; border: 2px solid #f5deb3;
+      padding: 10px 18px; border-radius: 25px; font-weight: bold; cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 14px;
+    }
+
+    #isolated-tree-scene {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: #ffffff; opacity: 0; pointer-events: none;
+      transition: opacity 0.7s ease; z-index: 40; overflow: hidden;
+    }
+    #isolated-tree-scene.active { opacity: 1; pointer-events: auto; }
+
+    #climbing-camera {
+      position: relative; width: 100%; height: 100%;
+      transform-origin: 50% 25%;
+      transition: transform 0.85s cubic-bezier(0.22, 1, 0.36, 1);
+      display: flex; justify-content: center; align-items: center;
+    }
+
+    #main-tree-video { width: 100%; height: 90%; object-fit: contain; }
+
+    .fruit-target {
+      position: absolute; width: 54px; height: 54px; border-radius: 50%;
+      border: 3px solid #fff; cursor: pointer; box-shadow: 0 6px 16px rgba(0,0,0,0.4);
+      display: flex; justify-content: center; align-items: center;
+      color: #fff; font-weight: bold; font-size: 12px; text-shadow: 0 1px 3px #000;
+      opacity: 0; pointer-events: none; transition: transform 0.3s, opacity 0.4s;
+    }
+    .fruit-target.active-target {
+      opacity: 1; pointer-events: auto; animation: fruitGlow 1.3s infinite alternate;
+    }
+    .fruit-target.picked { opacity: 0 !important; pointer-events: none !important; transform: scale(0); }
+
+    @keyframes fruitGlow {
+      0% { transform: scale(1); box-shadow: 0 0 10px #ff9800, 0 0 20px rgba(255,152,0,0.6); }
+      100% { transform: scale(1.18); box-shadow: 0 0 25px #ffd54f, 0 0 45px #ff6f00; }
+    }
+
+    .pov-hands-layer {
+      position: absolute; bottom: -25px; left: 0; width: 100%; height: 220px;
+      pointer-events: none; z-index: 75; display: flex; justify-content: space-between; padding: 0 18px;
+    }
+    .pov-hand {
+      width: 130px; height: 185px; background: linear-gradient(145deg, #f5cba7, #e59866);
+      border: 3px solid #a0522d; border-radius: 65px 65px 20px 20px;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.45);
+      transition: transform 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .pov-hand.left { transform: rotate(16deg) translateY(35px); }
+    .pov-hand.right { transform: rotate(-16deg) translateY(35px); }
+    .pov-hand.grab-left { transform: rotate(5deg) translateY(-50px) scale(1.1); }
+    .pov-hand.grab-right { transform: rotate(-5deg) translateY(-50px) scale(1.1); }
+
+    #palm-inspect-overlay {
+      position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(20, 30, 20, 0.88); backdrop-filter: blur(8px);
+      z-index: 120; display: flex; flex-direction: column; justify-content: center; align-items: center;
+      opacity: 0; pointer-events: none; transition: opacity 0.45s ease; padding: 20px;
+    }
+    #palm-inspect-overlay.show { opacity: 1; pointer-events: auto; }
+
+    .open-palm {
+      width: 210px; height: 210px; border-radius: 50% 50% 42% 42%;
+      background: radial-gradient(circle, #f5cba7 45%, #d38b5d 100%);
+      border: 4px solid #8b4513; display: flex; justify-content: center; align-items: center;
+      box-shadow: 0 15px 35px rgba(0,0,0,0.6), inset 0 0 25px rgba(139,69,19,0.35);
+      margin-bottom: 22px; animation: handBreathe 3s ease-in-out infinite;
+    }
+    .fruit-in-hand {
+      width: 105px; height: 105px; border-radius: 50%;
+      box-shadow: 0 12px 25px rgba(0,0,0,0.45), 0 0 30px rgba(255,213,79,0.7);
+    }
+    @keyframes handBreathe {
+      0%, 100% { transform: translateY(0) rotate(-1deg); }
+      50% { transform: translateY(-10px) rotate(2deg); }
+    }
+
+    .content-box {
+      background: #fff8e7; border: 3px solid #6b4226; border-radius: 16px;
+      padding: 20px; text-align: center; max-width: 92%; color: #3e2723;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .content-box h3 { color: #d84315; margin-bottom: 10px; font-size: 20px; }
+    .content-box p { font-size: 15px; line-height: 1.5; margin-bottom: 18px; }
+    .continue-btn {
+      background: linear-gradient(180deg, #ff9800, #e65100); color: white;
+      border: none; padding: 12px 26px; border-radius: 25px; font-size: 16px;
+      font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(230,81,0,0.4);
+    }
+
+    #guide-banner {
+      position: absolute; bottom: 95px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.82); color: #fff; padding: 10px 18px;
+      border-radius: 25px; font-size: 13px; font-weight: bold; z-index: 90;
+      width: 88%; text-align: center; pointer-events: none;
+      border: 1px solid rgba(255,255,255,0.25);
+    }
+  </style>
+</head>
+<body>
+
+<div id="app-container">
+  <div class="hud-bar">
+    <button class="hud-btn" id="backGardenBtn" onclick="exitTreeToGarden()">← Bahçeye Dön</button>
+    <span id="hud-title">Hafız Bahçesi (20 Ağaç)</span>
+    <span id="hud-progress">Meyve: 0/5</span>
+  </div>
+
+  <div id="garden-world">
+    <div id="garden-corridor"></div>
+    <div class="walk-controls" id="walkControls">
+      <button class="walk-btn" onclick="walkGarden(-1)">⬇ Geri Adım</button>
+      <button class="walk-btn" onclick="walkGarden(1)">⬆ İleri Yürü</button>
+    </div>
+  </div>
+
+  <div id="isolated-tree-scene"
+       onmousedown="startClimbTouch(event)" onmouseup="endClimbTouch(event)"
+       ontouchstart="startClimbTouch(event)" ontouchend="endClimbTouch(event)">
+    <div id="climbing-camera">
+      <video id="main-tree-video" src="1000149889.mp4" muted playsinline></video>
+      <div id="fruits-layer"></div>
+    </div>
+  </div>
+
+  <div class="pov-hands-layer">
+    <div class="pov-hand left" id="handL"></div>
+    <div class="pov-hand right" id="handR"></div>
+  </div>
+
+  <div id="guide-banner">Sağdaki "1. Kayısı Ağacı" tabelasına dokunarak ağaca yönel.</div>
+
+  <div id="palm-inspect-overlay">
+    <div class="open-palm">
+      <div class="fruit-in-hand" id="palmFruitVisual"></div>
+    </div>
+    <div class="content-box">
+      <h3 id="inspectTitle">Meyve Koparıldı</h3>
+      <p id="inspectText">Elindeki meyveye bakıyorsun.</p>
+      <button class="continue-btn" onclick="nextFruitStep()">Diğer Meyveyi Kopar →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  const TREES_DATA = [
+    { id: 1, name: "Kayısı Ağacı", start: 0.0, end: 4.5, color: "#ff9800", side: "right", fruits: [{x:54,y:24}, {x:28,y:39}, {x:49,y:48}, {x:71,y:41}, {x:23,y:56}] },
+    { id: 2, name: "İncir Ağacı", start: 5.0, end: 9.5, color: "#5e35b1", side: "left", fruits: [{x:66,y:34}, {x:28,y:37}, {x:61,y:42}, {x:24,y:47}, {x:76,y:41}] },
+    { id: 3, name: "Hurma Ağacı", start: 10.0, end: 14.5, color: "#fb8c00", side: "right", fruits: [{x:51,y:40}, {x:40,y:43}, {x:61,y:44}, {x:37,y:49}, {x:63,y:50}] },
+    { id: 4, name: "Zeytin Ağacı", start: 15.0, end: 19.5, color: "#3949ab", side: "left", fruits: [{x:51,y:26}, {x:34,y:34}, {x:65,y:35}, {x:22,y:43}, {x:75,y:44}] },
+    { id: 5, name: "Elma Ağacı", start: 20.0, end: 24.5, color: "#e53935", side: "right", fruits: [{x:55,y:22}, {x:36,y:33}, {x:62,y:36}, {x:25,y:48}, {x:73,y:49}] },
+    { id: 6, name: "Üzüm Asması", start: 25.0, end: 29.5, color: "#6a1b9a", side: "left", fruits: [{x:57,y:26}, {x:36,y:33}, {x:47,y:42}, {x:65,y:43}, {x:24,y:49}] },
+    { id: 7, name: "Nar Ağacı", start: 30.0, end: 34.5, color: "#c62828", side: "right", fruits: [{x:62,y:27}, {x:42,y:33}, {x:55,y:34}, {x:22,y:42}, {x:74,y:43}] },
+    { id: 8, name: "Armut Ağacı", start: 35.0, end: 39.5, color: "#fdd835", side: "left", fruits: [{x:52,y:23}, {x:28,y:35}, {x:71,y:35}, {x:41,y:42}, {x:61,y:44}] },
+    { id: 9, name: "Kiraz Ağacı", start: 40.0, end: 44.5, color: "#d32f2f", side: "right", fruits: [{x:62,y:25}, {x:70,y:25}, {x:37,y:33}, {x:26,y:44}, {x:77,y:56}] },
+    { id: 10, name: "Portakal Ağacı", start: 45.0, end: 49.5, color: "#ff6f00", side: "left", fruits: [{x:41,y:24}, {x:58,y:30}, {x:32,y:39}, {x:76,y:40}, {x:49,y:48}] },
+    { id: 11, name: "Mandalina Ağacı", start: 50.0, end: 54.5, color: "#fb8c00", side: "right", fruits: [{x:50,y:20}, {x:37,y:28}, {x:76,y:28}, {x:24,y:43}, {x:68,y:48}] },
+    { id: 12, name: "Antep Fıstığı", start: 55.0, end: 59.5, color: "#9ccc65", side: "left", fruits: [{x:55,y:42}, {x:39,y:46}, {x:71,y:47}, {x:27,y:53}, {x:80,y:58}] },
+    { id: 13, name: "Çam Fıstığı", start: 60.0, end: 64.5, color: "#6d4c41", side: "right", fruits: [{x:57,y:23}, {x:39,y:33}, {x:64,y:34}, {x:27,y:43}, {x:75,y:44}] },
+    { id: 14, name: "Limon Ağacı", start: 65.0, end: 69.5, color: "#ffee58", side: "left", fruits: [{x:62,y:25}, {x:44,y:31}, {x:27,y:42}, {x:58,y:44}, {x:74,y:49}] },
+    { id: 15, name: "Muz Ağacı", start: 70.0, end: 74.5, color: "#fdd835", side: "right", fruits: [{x:50,y:35}, {x:45,y:40}, {x:55,y:41}, {x:46,y:46}, {x:54,y:47}] },
+    { id: 16, name: "Muşmula Ağacı", start: 75.0, end: 79.5, color: "#8d6e63", side: "left", fruits: [{x:52,y:21}, {x:33,y:26}, {x:69,y:28}, {x:44,y:39}, {x:63,y:43}] },
+    { id: 17, name: "Kuşburnu Ağacı", start: 80.0, end: 84.5, color: "#e64a19", side: "right", fruits: [{x:48,y:24}, {x:32,y:34}, {x:68,y:35}, {x:25,y:48}, {x:75,y:50}] },
+    { id: 18, name: "Karadut Ağacı", start: 85.0, end: 89.5, color: "#311b92", side: "left", fruits: [{x:48,y:28}, {x:29,y:35}, {x:66,y:36}, {x:22,y:48}, {x:77,y:46}] },
+    { id: 19, name: "Şeftali Ağacı", start: 90.0, end: 94.5, color: "#ff7043", side: "right", fruits: [{x:54,y:21}, {x:37,y:28}, {x:68,y:31}, {x:26,y:43}, {x:58,y:45}] },
+    { id: 20, name: "Badem Ağacı", start: 95.0, end: 99.5, color: "#aed581", side: "left", fruits: [{x:57,y:39}, {x:39,y:43}, {x:72,y:45}, {x:23,y:49}, {x:65,y:52}] }
+  ];
+
+  let gardenWalkStep = 0;
+  let activeTree = null;
+  let mode = 'garden';
+  let climbStep = 0;
+  let touchStartY = 0;
+  let currentFruitIndex = 0;
+
+  const corridor = document.getElementById('garden-corridor');
+  const gardenWorld = document.getElementById('garden-world');
+  const isolatedScene = document.getElementById('isolated-tree-scene');
+  const climbingCam = document.getElementById('climbing-camera');
+  const videoEl = document.getElementById('main-tree-video');
+  const fruitsLayer = document.getElementById('fruits-layer');
+  const guideBanner = document.getElementById('guide-banner');
+  const handL = document.getElementById('handL');
+  const handR = document.getElementById('handR');
+  const backGardenBtn = document.getElementById('backGardenBtn');
+  const walkControls = document.getElementById('walkControls');
+  const hudTitle = document.getElementById('hud-title');
+  const hudProgress = document.getElementById('hud-progress');
+  const inspectOverlay = document.getElementById('palm-inspect-overlay');
+
+  function renderGardenTrees() {
+    corridor.innerHTML = '';
+    TREES_DATA.forEach((tree, idx) => {
+      const row = Math.floor(idx / 2);
+      const depthDiff = row - gardenWalkStep;
+      if (depthDiff < 0 || depthDiff > 3) return;
+
+      const scale = 1 - (depthDiff * 0.16);
+      const bottomPos = 24 + (depthDiff * 18);
+      const sideOffset = tree.side === 'right' ? `right: ${5 + depthDiff * 7}%` : `left: ${5 + depthDiff * 7}%`;
+
+      const node = document.createElement('div');
+      node.className = 'garden-tree-node';
+      node.style = `bottom: ${bottomPos}%; ${sideOffset}; transform: scale(${scale}); z-index: ${50 - depthDiff};`;
+      node.onclick = () => enterTree(tree);
+
+      node.innerHTML = `
+        <div class="tree-wood-sign" style="${tree.id === 1 ? 'background:#ffb74d; border-color:#bf360c; font-size:16px;' : ''}">
+          🌳 ${tree.id}. ${tree.name}
+        </div>
+      `;
+      corridor.appendChild(node);
+    });
+  }
+
+  function walkGarden(dir) {
+    gardenWalkStep = Math.max(0, Math.min(9, gardenWalkStep + dir));
+    handL.classList.add('grab-left');
+    setTimeout(() => handL.classList.remove('grab-left'), 300);
+    renderGardenTrees();
+    guideBanner.innerText = `Bahçede ilerliyorsun (${gardenWalkStep + 1}/10). Tırmanmak istediğin ağacın tabelasına dokun.`;
+  }
+
+  function enterTree(tree) {
+    activeTree = tree;
+    mode = 'climbing';
+    climbStep = 0;
+    currentFruitIndex = 0;
+
+    const moveX = tree.side === 'right' ? '-25%' : '25%';
+    gardenWorld.style.transform = `scale(2.3) translate(${moveX}, -10%)`;
+    gardenWorld.style.opacity = '0';
+    walkControls.style.display = 'none';
+
+    videoEl.currentTime = tree.start;
+    videoEl.play().catch(() => {});
+
+    fruitsLayer.innerHTML = '';
+    tree.fruits.forEach((f, i) => {
+      const fBtn = document.createElement('div');
+      fBtn.className = 'fruit-target';
+      fBtn.id = 'fruit-node-' + i;
+      fBtn.style.left = f.x + '%';
+      fBtn.style.top = f.y + '%';
+      fBtn.style.background = `radial-gradient(circle at 30% 30%, #fff, ${tree.color}, #3e2723)`;
+      fBtn.innerText = i === 0 ? 'Zirve' : (i + 1) + '.';
+      fBtn.onclick = (e) => pickFruitFromTree(i, e);
+      fruitsLayer.appendChild(fBtn);
+    });
+
+    setTimeout(() => {
+      isolatedScene.classList.add('active');
+      backGardenBtn.style.display = 'block';
+      hudTitle.innerText = `${tree.id}. ${tree.name}`;
+      hudProgress.innerText = `Meyve: 0/5`;
+      guideBanner.innerText = `${tree.name} önündesin. Tırmanmak için parmağını yukarıdan aşağıya doğru çek (0/3)`;
+    }, 550);
+  }
+
+  videoEl.addEventListener('timeupdate', () => {
+    if (activeTree && videoEl.currentTime >= activeTree.end) {
+      videoEl.currentTime = activeTree.start;
+      videoEl.play();
+    }
+  });
+
+  function startClimbTouch(e) {
+    if (mode !== 'climbing') return;
+    touchStartY = e.touches ? e.touches[0].clientY : e.clientY;
+  }
+
+  function endClimbTouch(e) {
+    if (mode !== 'climbing') return;
+    const endY = e.changedTouches ? e.changedTouches[0].clientY : e.clientY;
+    if (endY - touchStartY > 30 || Math.abs(endY - touchStartY) < 12) {
+      performClimbStep();
+    }
+  }
+
+  function performClimbStep() {
+    if (climbStep >= 3) return;
+    climbStep++;
+
+    if (climbStep % 2 === 1) {
+      handR.classList.add('grab-right');
+      setTimeout(() => handR.classList.remove('grab-right'), 450);
+    } else {
+      handL.classList.add('grab-left');
+      setTimeout(() => handL.classList.remove('grab-left'), 450);
+    }
+
+    if (climbStep === 1) {
+      climbingCam.style.transform = 'scale(1.35) translateY(8%)';
+      guideBanner.innerText = 'İlk dala tutundun! Tekrar aşağı çekerek yukarı tırman (1/3)';
+    } else if (climbStep === 2) {
+      climbingCam.style.transform = 'scale(1.75) translateY(15%)';
+      guideBanner.innerText = 'En üste çok az kaldı, bir kez daha çek! (2/3)';
+    } else if (climbStep === 3) {
+      mode = 'top';
+      const topFruit = activeTree.fruits[0];
+      climbingCam.style.transformOrigin = `${topFruit.x}% ${topFruit.y}%`;
+      climbingCam.style.transform = 'scale(2.2)';
+      document.getElementById('fruit-node-0').classList.add('active-target');
+      guideBanner.innerText = 'En üste çıktın! Parlayan ZİRVE meyvesine dokunarak kopar.';
+    }
+  }
+
+  function pickFruitFromTree(idx, e) {
+    e.stopPropagation();
+    const targetEl = document.getElementById('fruit-node-' + idx);
+    if (!targetEl.classList.contains('active-target')) return;
+
+    handR.classList.add('grab-right');
+
+    setTimeout(() => {
+      targetEl.classList.remove('active-target');
+      targetEl.classList.add('picked');
+      handR.classList.remove('grab-right');
+
+      hudProgress.innerText = `Meyve: ${idx + 1}/5`;
+      document.getElementById('palmFruitVisual').style.background =
+        `radial-gradient(circle at 30% 30%, #ffffff, ${activeTree.color}, #2e1503)`;
+
+      document.getElementById('inspectTitle').innerText =
+        `${activeTree.name} - ${idx + 1}. Meyve Avucunda`;
+      document.getElementById('inspectText').innerText =
+        `${activeTree.name} üzerindeki ${idx + 1}. meyveyi kopardın ve elinle inceliyorsun.`;
+
+      inspectOverlay.classList.add('show');
+    }, 350);
+  }
+
+  function nextFruitStep() {
+    inspectOverlay.classList.remove('show');
+    currentFruitIndex++;
+
+    if (currentFruitIndex < 5) {
+      const nextF = activeTree.fruits[currentFruitIndex];
+      climbingCam.style.transformOrigin = `${nextF.x}% ${nextF.y}%`;
+      climbingCam.style.transform = 'scale(1.65)';
+      document.getElementById('fruit-node-' + currentFruitIndex).classList.add('active-target');
+      guideBanner.innerText = `Şimdi parlayan ${currentFruitIndex + 1}. meyveye dokunup onu kopar!`;
+    } else {
+      climbingCam.style.transform = 'scale(1)';
+      guideBanner.innerText = `Tebrikler! ${activeTree.name} üzerindeki tüm meyveleri kopardın. Bahçeye dönebilirsin.`;
+    }
+  }
+
+  function exitTreeToGarden() {
+    isolatedScene.classList.remove('active');
+    gardenWorld.style.transform = 'scale(1) translate(0,0)';
+    gardenWorld.style.opacity = '1';
+    climbingCam.style.transform = 'scale(1)';
+    backGardenBtn.style.display = 'none';
+    walkControls.style.display = 'flex';
+    hudTitle.innerText = 'Hafız Bahçesi (20 Ağaç)';
+    guideBanner.innerText = 'Bahçedesin. İleri yürüyebilir veya başka bir ağaca yönelebilirsin.';
+    videoEl.pause();
+    mode = 'garden';
+  }
+
+  renderGardenTrees();
+</script>
+</body>
+</html>
