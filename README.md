@@ -14,5 +14,5 @@ GitHub > Actions > "Android APK" > Run workflow > bitince Artifacts > HafizBahce
 
 ## Güncelleme: panorama bahçe
 - Bahçe arka planı `assets/sahne/panorama.jpg`. Parmakla sağa sola sürükleyince etrafa bakılır.
-- İleri/Geri ile ağaçtan ağaca yürünür, yakın ağaç büyük, sonrakiler küçüktür.
+- Ağaçlar panorama şeridinde sağdan sola dizili (1. ağaç en sağda, en büyük). Sürükleyerek veya Önceki/Sonraki ile gezilir.
 - Ağaçta meyveler yukarıdan aşağıya sıralıdır (1. ayet en üstte).

@@ -200,45 +200,42 @@ function TreeStage({ tree, startK, onBack, onProgress, onNext, hasNext }) {
   );
 }
 
-// ---------------------------------------------------------------- bahce (yuruyus)
-const SP = [2.1, 1, 0.55, 0.38, 0.29, 0.235];             // derinlik olcegi: d = -1 ... 4
-const OPA = [0, 1, 0.95, 0.85, 0.7, 0.5];
-const HZ = 0.53;                                   // panoramada ufuk cizgisi
-const BASE_Y = H * 0.91, TREE_H = H * 0.5;
+// ---------------------------------------------------------------- bahce: panorama seridi, agaclar sagdan sola
+const NT = 5, WW = PW * NT;                       // panorama 5 kez (aynali) yan yana = uzun serit
+const GAP = 440;                                  // agaclar arasi mesafe
+const HZ = 0.53;                                  // panoramada ufuk cizgisi
+const TREE_H = H * 0.5;
+const XR = (NT - 0.5) * PW + 100;                 // 1. agac sagda, yolun yaninda
+const treeX = (i) => XR - i * GAP;                // 1. agac en sagda, sonrakiler sola
+const treeSp = (i) => Math.max(0.42, 1 - 0.03 * i);   // ilk agaclar buyuk, sonrakiler kucuk
+const clampPan = (v) => Math.max(W - WW, Math.min(0, v));
+const panFor = (i) => clampPan(W / 2 - treeX(i));
 
-function GardenTree({ t, i, pos, st, ap, onApproach }) {
-  const inR = [i - 1, i, i + 1, i + 2, i + 3, i + 4];
-  const side = i % 2 === 0 ? -1 : 1;
-  const w = Math.min(W * 0.95, TREE_H * t.aspect), h = w / t.aspect;
-  const scale = pos.interpolate({ inputRange: inR, outputRange: SP, extrapolate: 'clamp' });
-  const x = pos.interpolate({ inputRange: inR, outputRange: SP.map((s) => side * W * 0.4 * s), extrapolate: 'clamp' });
-  const y = pos.interpolate({ inputRange: inR, outputRange: SP.map((s) => (HZ + 0.38 * s - 0.91) * H), extrapolate: 'clamp' });
-  const op = pos.interpolate({ inputRange: inR, outputRange: OPA, extrapolate: 'clamp' });
-  const cur = i === st;
+function GardenTree({ t, i, cur, ap, onTap }) {
+  const sp = treeSp(i);
+  let h = TREE_H * sp, w = h * t.aspect;
+  if (w > W * 0.95 * sp) { w = W * 0.95 * sp; h = w / t.aspect; }
+  const baseY = H * (HZ + 0.38 * sp);
   const innerScale = cur ? ap.interpolate({ inputRange: [0, 1], outputRange: [1, 1.7] }) : 1;
   const innerOp = cur ? 1 : ap.interpolate({ inputRange: [0, 1], outputRange: [1, 0] });
   return (
-    <Animated.View pointerEvents={cur ? 'auto' : 'none'}
-      style={{ position: 'absolute', left: PW / 2 - w / 2, top: BASE_Y - h, width: w, height: h, opacity: op, zIndex: 50 - i, transformOrigin: '50% 100%', transform: [{ translateX: x }, { translateY: y }, { scale }] }}>
-      <Animated.View style={{ width: w, height: h, opacity: innerOp, transformOrigin: '50% 100%', transform: [{ scale: innerScale }] }}>
-        <View style={{ position: 'absolute', left: w * 0.08, width: w * 0.84, bottom: -h * 0.02, height: h * 0.07, borderRadius: h, backgroundColor: 'rgba(10,20,5,0.38)' }} />
-        <Pressable onPress={cur ? onApproach : undefined} style={{ width: w, height: h }}>
-          <Image source={TREE_IMG[t.n]} style={{ width: w, height: h }} resizeMode="stretch" />
-        </Pressable>
-      </Animated.View>
+    <Animated.View style={{ position: 'absolute', left: treeX(i) - w / 2, top: baseY - h, width: w, height: h, zIndex: 50 - i, opacity: innerOp, transformOrigin: '50% 100%', transform: [{ scale: innerScale }] }}>
+      <View style={{ position: 'absolute', left: w * 0.08, width: w * 0.84, bottom: -h * 0.02, height: h * 0.07, borderRadius: h, backgroundColor: 'rgba(10,20,5,0.38)' }} />
+      <Pressable onPress={() => onTap(i)} style={{ width: w, height: h }}>
+        <Image source={TREE_IMG[t.n]} style={{ width: w, height: h }} resizeMode="stretch" />
+      </Pressable>
     </Animated.View>
   );
 }
 
 // ---------------------------------------------------------------- ana uygulama
 export default function App() {
-  const [mode, setMode] = useState('gate');         // gate | garden | tree
-  const [st, setSt] = useState(0);
+  const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
+  const [st, setSt] = useState(0);                  // ortadaki / secili agac indeksi
   const [tree, setTree] = useState(null);
   const [prog, setProg] = useState({});             // {agacNo: toplanan}
-  const pos = useRef(new Animated.Value(0)).current;
   const ap = useRef(new Animated.Value(0)).current;
-  const walking = useRef(false);
+  const busy = useRef(false);
   // kapi
   const gs = useRef(new Animated.Value(1)).current;
   const go = useRef(new Animated.Value(1)).current;
@@ -247,16 +244,21 @@ export default function App() {
   const hh = useRef(new Animated.Value(0)).current;
   const gfade = useRef(new Animated.Value(0)).current;
 
-  // 360 bakis: parmakla saga sola surukle
-  const C0 = W / 2 - PW / 2;
-  const panX = useRef(new Animated.Value(C0)).current;
-  const panVal = useRef(C0); const panStart = useRef(C0);
+  // bahce: parmakla surukle, agaclar sagdan sola dizili
+  const panX = useRef(new Animated.Value(panFor(0))).current;
+  const panVal = useRef(panFor(0)); const panStart = useRef(0);
+  const nearest = (v) => { let b = 0, bd = 1e9; for (let i = 0; i < TREES.length; i++) { const d = Math.abs(W / 2 - (v + treeX(i))); if (d < bd) { bd = d; b = i; } } return b; };
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponder: (e, g) => Math.abs(g.dx) > 8 && Math.abs(g.dx) > Math.abs(g.dy),
     onPanResponderGrant: () => { panStart.current = panVal.current; },
-    onPanResponderMove: (e, g) => { const v = Math.max(W - PW, Math.min(0, panStart.current + g.dx)); panVal.current = v; panX.setValue(v); },
+    onPanResponderMove: (e, g) => { const v = clampPan(panStart.current + g.dx); panVal.current = v; panX.setValue(v); },
+    onPanResponderRelease: () => setSt(nearest(panVal.current)),
   })).current;
-  const recenter = (ms = 900) => { panVal.current = C0; T(panX, C0, ms).start(); };
+  const goTo = (i, ms = 1200, cb) => {
+    const ni = Math.max(0, Math.min(TREES.length - 1, i)); setSt(ni);
+    const v = panFor(ni); panVal.current = v;
+    T(panX, v, ms).start(cb);
+  };
 
   useEffect(() => { Animated.timing(gfade, { toValue: 1, duration: 1000, useNativeDriver: true }).start(); }, []);
 
@@ -267,52 +269,50 @@ export default function App() {
       T(zs, 1, 2600), T(hh, -H * 0.12, 1600),
     ]).start(() => setMode('garden'));
   };
-
-  const walk = (dir) => {
-    if (walking.current) return;
-    const ns = Math.max(0, Math.min(TREES.length - 1, st + dir));
-    if (ns === st) return;
-    walking.current = true; setSt(ns); recenter();
-    T(pos, ns, 1500).start(() => { walking.current = false; });
+  const step = (dir) => { if (busy.current) return; goTo(st + dir); };
+  const approachAt = (i) => {
+    if (busy.current) return;
+    busy.current = true; setSt(i);
+    const v = panFor(i); panVal.current = v;
+    Animated.sequence([T(panX, v, 700), T(ap, 1, 900)]).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; });
   };
-  const approach = () => {
-    if (walking.current) return;
-    walking.current = true; recenter(700);
-    T(ap, 1, 900).start(() => { setTree(TREES[st]); setMode('tree'); walking.current = false; });
-  };
-  const backToGarden = () => { ap.setValue(0); panVal.current = C0; panX.setValue(C0); setMode('garden'); };
+  const backToGarden = () => { ap.setValue(0); setMode('garden'); };
   const nextTree = () => {
     const ns = Math.min(TREES.length - 1, tree.n);    // sonraki agac = indeks tree.n
-    ap.setValue(0); pos.setValue(ns); setSt(ns); panVal.current = C0; panX.setValue(C0); setMode('garden');
+    ap.setValue(0); const v = panFor(ns); panVal.current = v; panX.setValue(v); setSt(ns); setMode('garden');
   };
   const onProgress = (n, c) => setProg((p) => ({ ...p, [n]: c }));
 
   const cur = TREES[st];
   const done = prog[cur.n] || 0;
   const handsTop = H * 0.82 - 0.39 * W * IMG_RATIO_HANDS;
+  const fadeUi = ap.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0] });
 
   return (
     <View style={{ flex: 1, backgroundColor: '#12210f' }}>
       <StatusBar hidden />
-      {/* panorama dunyasi: kapi sahnesinde ve bahcede */}
+      {/* panorama seridi: kapi sahnesinde ve bahcede */}
       {mode !== 'tree' && (
         <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: zs }] }]}>
-          <Animated.View {...pan.panHandlers} style={{ position: 'absolute', left: 0, top: 0, width: PW, height: PH, transform: [{ translateX: panX }] }}>
-            <Image source={SCENE.pano} style={{ width: PW, height: PH }} resizeMode="cover" />
-            {mode === 'garden' && TREES.map((t, i) => (i >= st - 1 && i <= st + 4) ? <GardenTree key={t.n} t={t} i={i} pos={pos} st={st} ap={ap} onApproach={approach} /> : null)}
+          <Animated.View {...pan.panHandlers} style={{ position: 'absolute', left: 0, top: 0, width: WW, height: PH, transform: [{ translateX: panX }] }}>
+            {Array.from({ length: NT }, (_, j) => (
+              <Image key={j} source={SCENE.pano} resizeMode="cover"
+                style={{ position: 'absolute', left: j * PW, top: 0, width: PW, height: PH, transform: [{ scaleX: (NT - 1 - j) % 2 === 1 ? -1 : 1 }] }} />
+            ))}
+            {mode === 'garden' && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} cur={i === st} ap={ap} onTap={approachAt} />)}
           </Animated.View>
         </Animated.View>
       )}
       {mode === 'garden' && (
         <>
-          <Animated.View style={[S.gardenTop, { opacity: ap.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0] }) }]} pointerEvents="none">
-            <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi</Text>
+          <Animated.View style={[S.gardenTop, { opacity: fadeUi }]} pointerEvents="none">
+            <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi · kaydırarak bak</Text>
             <Text style={S.gSub}>{cur.n}. {cur.name} ağacı  ·  {done}/{cur.page.ayat.length}{done >= cur.page.ayat.length ? '  ✓' : ''}</Text>
           </Animated.View>
-          <Animated.View style={[S.walkBar, { opacity: ap.interpolate({ inputRange: [0, 0.5], outputRange: [1, 0] }) }]}>
-            <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => walk(-1)}><Text style={S.walkTx}>▼ Geri</Text></Pressable>
-            <Pressable style={[S.walkB, S.walkMain]} onPress={approach}><Text style={[S.walkTx, { fontSize: 16 }]}>Ağaca yaklaş</Text></Pressable>
-            <Pressable style={[S.walkB, st === TREES.length - 1 && { opacity: 0.35 }]} onPress={() => walk(1)}><Text style={S.walkTx}>İleri ▲</Text></Pressable>
+          <Animated.View style={[S.walkBar, { opacity: fadeUi }]}>
+            <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => step(-1)}><Text style={S.walkTx}>▶ Önceki</Text></Pressable>
+            <Pressable style={[S.walkB, S.walkMain]} onPress={() => approachAt(st)}><Text style={[S.walkTx, { fontSize: 16 }]}>Ağaca yaklaş</Text></Pressable>
+            <Pressable style={[S.walkB, st === TREES.length - 1 && { opacity: 0.35 }]} onPress={() => step(1)}><Text style={S.walkTx}>Sonraki ◀</Text></Pressable>
           </Animated.View>
         </>
       )}
