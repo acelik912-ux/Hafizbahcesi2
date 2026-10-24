@@ -8,10 +8,7 @@ Q = [0.5, 0.28, 0.72, 0.4, 0.62, 0.2, 0.8, 0.5]
 for t in data['trees']:
     n = t['n']; ayat = len(data['pages'][n-1]['ayat'])
     im = Image.open(f'agaclar/tree{n:02d}.png').convert('RGBA')
-    a = np.asarray(im)[..., 3]
-    ys, xs = np.where(a > 40)
-    im = im.crop((xs.min(), ys.min(), xs.max()+1, ys.max()+1))
-    if im.width > 900: im = im.resize((900, round(im.height*900/im.width)), Image.LANCZOS)
+    # agaclar/treeNN.png video_kareleri.py tarafindan zaten kirpildi (animasyon kareleriyle ayni kutu)
     im.save(f'assets/agac/{n:02d}.png', optimize=True)
     arr = np.asarray(im).astype(int); H, W = arr.shape[:2]
     alpha = arr[..., 3] > 200

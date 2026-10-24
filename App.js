@@ -3,6 +3,7 @@ import { View, Text, Image, Pressable, Animated, Easing, StyleSheet, Dimensions,
 import DATA from './src/data.json';
 import TREES_XY from './src/trees.json';
 import { TREE_IMG, SCENE, IMG } from './src/assets';
+import { ANIM, NF } from './src/anim';
 
 const { width: W, height: H } = Dimensions.get('window');
 const IMG_RATIO_HANDS = 1601 / 900;            // el gorselleri 900x1601
@@ -211,7 +212,33 @@ const treeSp = (i) => Math.max(0.42, 1 - 0.03 * i);   // ilk agaclar buyuk, sonr
 const clampPan = (v) => Math.max(W - WW, Math.min(0, v));
 const panFor = (i) => clampPan(W / 2 - treeX(i));
 
-function GardenTree({ t, i, cur, ap, onTap }) {
+// agac videosundan kesilen seffaf kareler: varinca bir kez ileri-geri doner, sonra durur
+function AnimLayer({ n, w, h, onDone }) {
+  const frames = ANIM[n]; const refs = useRef([]); const last = useRef(0);
+  useEffect(() => {
+    const show = (k) => {
+      const p = refs.current[last.current], c = refs.current[k];
+      if (p) p.setNativeProps({ style: { opacity: 0 } });
+      if (c) c.setNativeProps({ style: { opacity: 1 } });
+      last.current = k;
+    };
+    let step = 0; const total = 2 * (NF - 1); let id;
+    const t0 = setTimeout(() => {
+      id = setInterval(() => {
+        step++;
+        if (step >= total) { clearInterval(id); show(0); onDone(); return; }
+        show(step <= NF - 1 ? step : total - step);
+      }, 125);
+    }, 500);
+    return () => { clearTimeout(t0); if (id) clearInterval(id); };
+  }, []);
+  return frames.map((src, k) => (
+    <Image key={k} ref={(r) => { refs.current[k] = r; }} source={src} fadeDuration={0} resizeMode="stretch"
+      style={{ position: 'absolute', left: 0, top: 0, width: w, height: h, opacity: 0 }} />
+  ));
+}
+
+function GardenTree({ t, i, cur, live, onLiveDone, ap, onTap }) {
   const sp = treeSp(i);
   let h = TREE_H * sp, w = h * t.aspect;
   if (w > W * 0.95 * sp) { w = W * 0.95 * sp; h = w / t.aspect; }
@@ -223,6 +250,7 @@ function GardenTree({ t, i, cur, ap, onTap }) {
       <View style={{ position: 'absolute', left: w * 0.08, width: w * 0.84, bottom: -h * 0.02, height: h * 0.07, borderRadius: h, backgroundColor: 'rgba(10,20,5,0.38)' }} />
       <Pressable onPress={() => onTap(i)} style={{ width: w, height: h }}>
         <Image source={TREE_IMG[t.n]} style={{ width: w, height: h }} resizeMode="stretch" />
+        {live && <AnimLayer n={t.n} w={w} h={h} onDone={onLiveDone} />}
       </Pressable>
     </Animated.View>
   );
@@ -233,6 +261,8 @@ export default function App() {
   const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
   const [st, setSt] = useState(0);                  // ortadaki / secili agac indeksi
   const [tree, setTree] = useState(null);
+  const [appr, setAppr] = useState(false);          // agaca yaklasiliyor
+  const [live, setLive] = useState(-1);             // animasyonu oynayan agac
   const [prog, setProg] = useState({});             // {agacNo: toplanan}
   const ap = useRef(new Animated.Value(0)).current;
   const busy = useRef(false);
@@ -260,6 +290,13 @@ export default function App() {
     T(panX, v, ms).start(cb);
   };
 
+  useEffect(() => {
+    setLive(-1);
+    if (mode !== 'garden' || appr) return;
+    const t = setTimeout(() => setLive(st), 1500);
+    return () => clearTimeout(t);
+  }, [st, mode, appr]);
+
   useEffect(() => { Animated.timing(gfade, { toValue: 1, duration: 1000, useNativeDriver: true }).start(); }, []);
 
   const enter = () => {
@@ -272,14 +309,14 @@ export default function App() {
   const step = (dir) => { if (busy.current) return; goTo(st + dir); };
   const approachAt = (i) => {
     if (busy.current) return;
-    busy.current = true; setSt(i);
+    busy.current = true; setSt(i); setAppr(true); setLive(-1);
     const v = panFor(i); panVal.current = v;
     Animated.sequence([T(panX, v, 700), T(ap, 1, 900)]).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; });
   };
-  const backToGarden = () => { ap.setValue(0); setMode('garden'); };
+  const backToGarden = () => { setAppr(false); ap.setValue(0); setMode('garden'); };
   const nextTree = () => {
     const ns = Math.min(TREES.length - 1, tree.n);    // sonraki agac = indeks tree.n
-    ap.setValue(0); const v = panFor(ns); panVal.current = v; panX.setValue(v); setSt(ns); setMode('garden');
+    setAppr(false); ap.setValue(0); const v = panFor(ns); panVal.current = v; panX.setValue(v); setSt(ns); setMode('garden');
   };
   const onProgress = (n, c) => setProg((p) => ({ ...p, [n]: c }));
 
@@ -299,7 +336,7 @@ export default function App() {
               <Image key={j} source={SCENE.pano} resizeMode="cover"
                 style={{ position: 'absolute', left: j * PW, top: 0, width: PW, height: PH, transform: [{ scaleX: (NT - 1 - j) % 2 === 1 ? -1 : 1 }] }} />
             ))}
-            {mode === 'garden' && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} cur={i === st} ap={ap} onTap={approachAt} />)}
+            {mode === 'garden' && TREES.map((t, i) => <GardenTree key={t.n} t={t} i={i} cur={i === st} live={live === i} onLiveDone={() => setLive(-1)} ap={ap} onTap={approachAt} />)}
           </Animated.View>
         </Animated.View>
       )}
