@@ -250,16 +250,21 @@ const K = W / 390, FL = 900 * K, L = 320 * K;          // perspektif mesafesi, a
 const HZ = H * 0.375, GY = H * 0.42;                   // ufuk cizgisi, yakin zemin payi
 const FOCUS = 250 * K;                                 // bir agaca giderken ondan uzaklik
 const NTR = TREES.length;
-const CAM_MIN = -FOCUS, CAM_MAX = (NTR - 1) * L - FOCUS, CAMX_MAX = 350 * K;
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const CAM_MIN = -2.6 * FL, CAM_MAX = (NTR - 1) * L - FOCUS, CAMX_MAX = 450 * K;
 const treeXw = (i) => (i % 2 === 0 ? 1 : -1) * (220 + (i % 3) * 65) * K;     // yol ekseninden yanal konum
+const PATH_AMP = 24 * K;                               // taş yolun kıvrımı (ağaçlar yolu izler)
+const pathAt = (c) => PATH_AMP * (Math.sin((c / L) * 7.5 * 0.055) * 4.2 + Math.cos((c / L) * 7.5 * 0.025) * 1.8);
+const treeS = (i) => treeXw(i) + pathAt(i * L);        // ağacın yola göre sabit yanal konumu
+const camXFor = (i) => -(treeS(i) - pathAt(i * L - FOCUS));
+const TV = (i) => 0.9 + ((i * 37) % 21) / 100;          // ağaç boyu çeşitliliği (doğal bahçe)
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const D_SAMP = [14, 8, 4.5, 2.6, 1.6, 1.0, 0.6, 0.3, 0.12, 0, -0.15, -0.35, -0.55].map((m) => m * FL);   // kameraya uzaklik ornekleri (buyukten kucuge)
 const D_OP = [0.4, 0.55, 0.75, 0.9, 1, 1, 1, 1, 1, 1, 1, 0.7, 0];                                    // sis: uzakta soluk, arkada kaybolur
 const nearOf = (z) => clamp(Math.round((z + FOCUS) / L), 0, NTR - 1);
 
-const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, onTap, sel, done }) {
+const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, npath, onTap, sel, lab, done }) {
   const g = useMemo(() => {
-    const h = Math.min(H * 0.36, (W * 0.62) / t.aspect), w = h * t.aspect;
+    const h = Math.min(H * 0.36, (W * 0.62) / t.aspect) * TV(i), w = h * t.aspect;
     const inp = D_SAMP.map((d) => i * L - d);
     const sc = D_SAMP.map((d) => FL / (FL + d));
     const scale = cam.interpolate({ inputRange: inp, outputRange: sc, extrapolate: 'clamp' });
@@ -267,7 +272,7 @@ const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, onTap, sel,
       w, h, scale,
       ty: cam.interpolate({ inputRange: inp, outputRange: sc.map((v) => GY * v), extrapolate: 'clamp' }),
       op: cam.interpolate({ inputRange: inp, outputRange: D_OP, extrapolate: 'clamp' }),
-      X: Animated.multiply(Animated.add(camX, treeXw(i)), scale),
+      X: Animated.multiply(Animated.add(Animated.add(camX, treeS(i)), npath), scale),
     };
   }, [i]);
   const full = done >= t.page.ayat.length;
@@ -277,9 +282,9 @@ const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, onTap, sel,
       <Pressable onPress={() => onTap(i)} style={{ flex: 1 }}>
         <View style={{ position: 'absolute', left: g.w * 0.12, width: g.w * 0.76, bottom: -g.h * 0.03, height: g.h * 0.09, borderRadius: g.h, backgroundColor: sel ? 'rgba(255,213,79,0.8)' : 'rgba(20,35,10,0.45)' }} />
         <Image source={GARDEN_IMG[t.n]} style={{ width: g.w, height: g.h }} resizeMode="stretch" fadeDuration={0} />
-        <View style={[S.lab, sel && { backgroundColor: '#e65100' }, full && { backgroundColor: '#2e7d32' }]}>
+        {(sel || lab) && <View style={[S.lab, sel && { backgroundColor: '#e65100' }, full && { backgroundColor: '#2e7d32' }]}>
           <Text style={S.labTx} numberOfLines={1}>{full ? '✓ ' : ''}{t.n}. {t.name}</Text>
-        </View>
+        </View>}
       </Pressable>
     </Animated.View>
   );
@@ -288,14 +293,16 @@ const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, onTap, sel,
 // ---------------------------------------------------------------- ana uygulama
 export default function App() {
   const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
+  const [ov, setOv] = useState(false);            // tum bahce (uzaktan) gorunumu
   const [st, setSt] = useState(0);                  // kameraya en yakin / secili agac indeksi
   const [tree, setTree] = useState(null);
   const [org, setOrg] = useState(null);             // yaklasma odak noktasi
   const [prog, setProg] = useState({});             // {agacNo: toplanan}
   const ap = useRef(new Animated.Value(0)).current;     // yaklasma 0..1
-  const cam = useRef(new Animated.Value(CAM_MIN)).current;   // kamera derinligi (ileri yuruyus)
+  const cam = useRef(new Animated.Value(-FOCUS)).current;   // kamera derinligi (ileri yuruyus)
   const camX = useRef(new Animated.Value(0)).current;        // kamera yanal
-  const camT = useRef(CAM_MIN), camXT = useRef(0);
+  const npath = useMemo(() => { const N = 160, inp = [], out = []; for (let k = 0; k < N; k++) { const c = CAM_MIN + (CAM_MAX - CAM_MIN) * k / (N - 1); inp.push(c); out.push(-pathAt(c)); } return cam.interpolate({ inputRange: inp, outputRange: out, extrapolate: 'clamp' }); }, []);
+  const camT = useRef(-FOCUS), camXT = useRef(0);
   const busy = useRef(false);
   const modeRef = useRef(mode); modeRef.current = mode;
   // kapi
@@ -309,7 +316,7 @@ export default function App() {
   const drag = useRef({ z: 0, x: 0 });
   const pan = useRef(PanResponder.create({
     onMoveShouldSetPanResponderCapture: (e, g) => modeRef.current === 'garden' && !busy.current && (Math.abs(g.dx) > 8 || Math.abs(g.dy) > 8),
-    onPanResponderGrant: () => { drag.current = { z: camT.current, x: camXT.current }; },
+    onPanResponderGrant: () => { setOv(false); drag.current = { z: camT.current, x: camXT.current }; },
     onPanResponderMove: (e, g) => {
       const z = clamp(drag.current.z - g.dy * 4 * K, CAM_MIN, CAM_MAX), x = clamp(drag.current.x + g.dx * 1.8 * K, -CAMX_MAX, CAMX_MAX);
       camT.current = z; camXT.current = x; cam.setValue(z); camX.setValue(x); setSt(nearOf(z));
@@ -327,9 +334,14 @@ export default function App() {
   };
   // kamerayi i. agacin onune yuruterek getir
   const walkTo = (i, cb) => {
-    const z = i * L - FOCUS, x = -treeXw(i);
-    busy.current = true; setSt(i); camT.current = z; camXT.current = x;
+    const z = i * L - FOCUS, x = camXFor(i);
+    busy.current = true; setOv(false); setSt(i); camT.current = z; camXT.current = x;
     Animated.parallel([T(cam, z, 1100), T(camX, x, 1100)]).start(() => { busy.current = false; if (cb) cb(); });
+  };
+  const overview = () => {
+    if (busy.current) return;
+    busy.current = true; setOv(true); camT.current = -2.4 * FL; camXT.current = 0;
+    Animated.parallel([T(cam, -2.4 * FL, 1400), T(camX, 0, 1400)]).start(() => { busy.current = false; });
   };
   const step = (dir) => { if (busy.current) return; walkTo(clamp(st + dir, 0, NTR - 1)); };
   const approachAt = useRef(null);
@@ -337,7 +349,7 @@ export default function App() {
     if (busy.current || modeRef.current !== 'garden') return;
     walkTo(i, () => {
       busy.current = true;
-      const s = FL / (FL + FOCUS), h = Math.min(H * 0.36, (W * 0.62) / TREES[i].aspect);
+      const s = FL / (FL + FOCUS), h = Math.min(H * 0.36, (W * 0.62) / TREES[i].aspect) * TV(i);
       setOrg([W / 2, HZ + GY * s - h * s * 0.5, 0]);
       requestAnimationFrame(() => T(ap, 1, 1100, { easing: Easing.in(Easing.cubic) }).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; }));
     });
@@ -346,7 +358,7 @@ export default function App() {
   tapTree.current = (i) => { if (i === st && Math.abs(camT.current - (i * L - FOCUS)) < 4) approachAt.current(i); else walkTo(i); };      // once yuru, sonra yaklas
   const onTap = useRef((i) => tapTree.current(i)).current;
   const onLeave = (next) => {
-    if (next) { const ns = Math.min(NTR - 1, tree.n); setSt(ns); const z = ns * L - FOCUS, x = -treeXw(ns); camT.current = z; camXT.current = x; cam.setValue(z); camX.setValue(x); }
+    if (next) { const ns = Math.min(NTR - 1, tree.n); setSt(ns); const z = ns * L - FOCUS, x = camXFor(ns); camT.current = z; camXT.current = x; cam.setValue(z); camX.setValue(x); }
     ap.setValue(0); setOrg(null);
   };
   const onDone = () => { setMode('garden'); busy.current = false; };
@@ -358,7 +370,7 @@ export default function App() {
   const showTrees = mode !== 'gate';
   const dolly = ap.interpolate({ inputRange: [0, 1], outputRange: [1, 3.4] });
   const camScale = Animated.multiply(dolly, zs);
-  const lo = Math.max(0, st - 2), hi = Math.min(NTR - 1, st + 10);
+  const lo = ov ? 0 : Math.max(0, st - 2), hi = ov ? NTR - 1 : Math.min(NTR - 1, st + 10);
 
   return (
     <View style={{ flex: 1, backgroundColor: '#12210f' }}>
@@ -366,17 +378,19 @@ export default function App() {
       {/* 3D bahce: zemin + perspektifli agaclar */}
       <Animated.View {...pan.panHandlers} style={[StyleSheet.absoluteFill, { transformOrigin: org || [W / 2, H / 2, 0], transform: [{ scale: camScale }] }]}>
         <Image source={SCENE.ground} resizeMode="cover" fadeDuration={0} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }} />
-        {showTrees && TREES.slice(lo, hi + 1).map((t, j) => <GardenTree key={t.n} t={t} i={lo + j} cam={cam} camX={camX} onTap={onTap} sel={mode === 'garden' && lo + j === st} done={prog[t.n] || 0} />)}
+        {showTrees && TREES.slice(lo, hi + 1).map((t, j) => <GardenTree key={t.n} t={t} i={lo + j} cam={cam} camX={camX} npath={npath} onTap={onTap} sel={mode === 'garden' && lo + j === st} lab={!ov && Math.abs(lo + j - st) <= 3} done={prog[t.n] || 0} />)}
       </Animated.View>
       {/* altin saat isigi / sis katmani */}
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,240,215,0.10)' }]} />
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: HZ - H * 0.06, height: H * 0.12, backgroundColor: 'rgba(255,245,225,0.16)' }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: -W * 0.3, top: HZ - H * 0.3, width: W * 0.9, height: H * 0.34, borderRadius: W, backgroundColor: 'rgba(255,236,170,0.13)' }} />
       {mode === 'garden' && (
         <>
           <View style={S.gardenTop} pointerEvents="none">
             <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi · yürümek için kaydır</Text>
             <Text style={S.gSub}>{cur.n}. {cur.name} ağacı  ·  {done}/{cur.page.ayat.length}{done >= cur.page.ayat.length ? '  ✓' : ''}</Text>
           </View>
+          <Pressable style={S.viewBtn} onPress={() => (ov ? walkTo(st) : overview())}><Text style={S.walkTx}>{ov ? '🚶 Yürüyüş' : '🦅 Tüm bahçe'}</Text></Pressable>
           <View style={S.walkBar}>
             <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => step(-1)}><Text style={S.walkTx}>▼ Geri</Text></Pressable>
             <Pressable style={[S.walkB, S.walkMain]} onPress={() => approachAt.current(st)}><Text style={[S.walkTx, { fontSize: 16 }]}>Ağaca yaklaş</Text></Pressable>
