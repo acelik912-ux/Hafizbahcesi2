@@ -60,19 +60,19 @@ def leafmat(i, base, tip):
     sub = nt.nodes.new('ShaderNodeMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = 0.5; nt.links.new(sep.outputs['X'], sub.inputs[0])
     ab = nt.nodes.new('ShaderNodeMath'); ab.operation = 'ABSOLUTE'; nt.links.new(sub.outputs[0], ab.inputs[0])
     vr = nt.nodes.new('ShaderNodeValToRGB'); vr.color_ramp.elements[0].position = 0.0; vr.color_ramp.elements[0].color = (1, 1, 1, 1); vr.color_ramp.elements[1].position = 0.03; vr.color_ramp.elements[1].color = (0, 0, 0, 1); nt.links.new(ab.outputs[0], vr.inputs['Fac'])
-    mix = nt.nodes.new('ShaderNodeMixRGB'); mix.inputs['Color2'].default_value = (0.42, 0.55, 0.16, 1); nt.links.new(vr.outputs['Color'], mix.inputs['Fac']); nt.links.new(ramp.outputs['Color'], mix.inputs['Color1'])
+    mix = nt.nodes.new('ShaderNodeMixRGB'); mix.inputs['Color2'].default_value = (0.16, 0.30, 0.06, 1); nt.links.new(vr.outputs['Color'], mix.inputs['Fac']); nt.links.new(ramp.outputs['Color'], mix.inputs['Color1'])
     vc = nt.nodes.new('ShaderNodeVertexColor'); vc.layer_name = 'tint'
     mul = nt.nodes.new('ShaderNodeMixRGB'); mul.blend_type = 'MULTIPLY'; mul.inputs['Fac'].default_value = 1.0
     nt.links.new(mix.outputs['Color'], mul.inputs['Color1']); nt.links.new(vc.outputs['Color'], mul.inputs['Color2']); nt.links.new(mul.outputs['Color'], b.inputs['Base Color'])
     return m
-leafm = [leafmat(0, (0.025, 0.11, 0.02), (0.09, 0.27, 0.04)), leafmat(1, (0.035, 0.14, 0.025), (0.12, 0.32, 0.05)), leafmat(2, (0.05, 0.17, 0.03), (0.16, 0.38, 0.06))]
+leafm = [leafmat(0, (0.008, 0.05, 0.008), (0.03, 0.13, 0.02)), leafmat(1, (0.012, 0.065, 0.01), (0.04, 0.16, 0.025)), leafmat(2, (0.018, 0.08, 0.012), (0.055, 0.19, 0.03))]
 me = bpy.data.meshes.new('Yaprak'); bm = bmesh.new(); uvl = bm.loops.layers.uv.new('UVMap'); tl = bm.loops.layers.color.new('tint')
 CC = Vector((0.0, 0.0, 4.0)); CR = Vector((2.25, 2.1, 1.75)); CUT = -0.42        # tac merkezi, yaricaplar, alt kesim (catal gorunsun)
 TS = [0, 0.14, 0.32, 0.52, 0.72, 0.9, 1.0]
 def leaf(c, nrm, down_bias, size, dark):
     nrm = nrm.normalized(); dn = Vector((0, 0, -1)); t2 = (dn - nrm * dn.dot(nrm)); t2 = (t2.normalized() if t2.length > 1e-3 else nrm.cross(Vector((1, 0, 0))).normalized())
     t2 = (t2 + Vector((random.uniform(-.55, .55), random.uniform(-.55, .55), random.uniform(-.55, .55)))); t2 = (t2 - nrm * t2.dot(nrm)).normalized(); t1 = nrm.cross(t2).normalized()
-    L = size; Wd = size * 0.42; tn = random.uniform(0.8, 1.2) * dark; mi = random.randrange(3)
+    L = size; Wd = size * 0.42; tn = random.uniform(0.85, 1.1) * dark; mi = random.randrange(3)
     ml, ll, rl = [], [], []
     for t in TS:
         wd = Wd * (math.sin(math.pi * min(1, t ** 0.75)) ** 0.8) ; lift = nrm * L * 0.13 * math.sin(math.pi * t) - nrm * L * 0.10 * t * t
@@ -93,7 +93,7 @@ def shell(rad, count, size):
         else: continue
         c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * rad
         n = Vector((u.x / CR.x, u.y / CR.y, u.z / CR.z)).normalized()
-        leaf(c, n, 0, size * random.uniform(0.85, 1.15), 0.42 + 0.85 * rad ** 2)
+        leaf(c, n, 0, size * random.uniform(0.85, 1.15), 0.45 + 0.5 * rad ** 2)
 for rad, cnt, sz in ((0.5, 260, 1.2), (0.66, 380, 1.15), (0.8, 520, 1.1), (0.92, 640, 1.05), (1.0, 560, 1.0)): shell(rad, cnt, sz)
 bm.to_mesh(me); bm.free(); lo = bpy.data.objects.new('Yaprak', me); bpy.context.collection.objects.link(lo)
 for m in leafm: me.materials.append(m)
@@ -107,9 +107,9 @@ placed = []
 for k in range(40):
     if len(placed) >= 9: break
     u = Vector((random.uniform(-.9, .9), -random.uniform(0.35, 1.0), random.uniform(-0.5, .8))).normalized()      # on yuzey (kameraya bakan)
-    c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * 0.93
-    if any((c - q).length < 0.85 for q in placed): continue
-    placed.append(c); R = random.uniform(0.33, 0.4)
+    c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * 1.07
+    if any((c - q).length < 0.9 for q in placed): continue
+    placed.append(c); R = random.uniform(0.38, 0.45)
     bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, radius=R, location=c); fo = bpy.context.object; fo.rotation_euler = (0, 0, random.uniform(0, 6.28))
     bm2 = bmesh.new(); bm2.from_mesh(fo.data)
     for v in bm2.verts:
