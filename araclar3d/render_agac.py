@@ -103,7 +103,7 @@ for m in leafm: me.materials.append(m)
 # kayisi meyvesi: yuvarlak, ortasinda ince olukla, turuncudan kirmiziya
 fm = mat('Kayisi', (0.9, 0.35, 0.05), 0.55, 0.35, 0.04); nt = fm.node_tree
 tc = nt.nodes.new('ShaderNodeTexCoord'); sp = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Generated'], sp.inputs['Vector'])
-fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.55, 0.15, 0.012, 1); fr.color_ramp.elements[1].color = (0.42, 0.035, 0.01, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
+fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.62, 0.30, 0.03, 1); fr.color_ramp.elements[1].color = (0.50, 0.10, 0.02, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
 nt.links.new(sp.outputs['X'], fr.inputs['Fac']); _no = nt.nodes.new('ShaderNodeTexNoise'); _no.inputs['Scale'].default_value = 9; _bu = nt.nodes.new('ShaderNodeBump'); _bu.inputs['Strength'].default_value = 0.08; nt.links.new(_no.outputs['Fac'], _bu.inputs['Height']); nt.links.new(_bu.outputs['Normal'], nt.nodes['Principled BSDF'].inputs['Normal']); nt.links.new(fr.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
 placed = []
 for k in range(40):
