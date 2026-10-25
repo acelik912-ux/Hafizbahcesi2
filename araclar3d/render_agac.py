@@ -8,6 +8,7 @@ bpy.ops.wm.read_factory_settings(use_empty=True)
 scn = bpy.context.scene
 scn.render.engine = 'CYCLES'; scn.cycles.device = 'CPU'; scn.cycles.samples = 40; scn.cycles.use_denoising = True
 scn.render.resolution_x, scn.render.resolution_y = 1080, 1920
+scn.render.film_transparent = True; scn.render.image_settings.file_format = 'PNG'; scn.render.image_settings.color_mode = 'RGBA'
 ids = [i.identifier for i in scn.view_settings.bl_rna.properties['view_transform'].enum_items]
 scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard')
 scn.view_settings.exposure = -0.4
@@ -26,7 +27,7 @@ sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.s
 w.node_tree.links.new(sky.outputs['Color'], w.node_tree.nodes['Background'].inputs['Color']); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
 
 # --- zemin: cimen
-bpy.ops.mesh.primitive_plane_add(size=300); g = bpy.context.object; g.name = 'Cimen'
+bpy.ops.mesh.primitive_plane_add(size=300); g = bpy.context.object; g.name = 'Cimen'; g.is_shadow_catcher = True
 gm = mat('Cimen', (0.10, 0.28, 0.05), 0.9); g.data.materials.append(gm)
 nt = gm.node_tree; n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = 60; bump = nt.nodes.new('ShaderNodeBump'); bump.inputs['Strength'].default_value = 0.6
 nt.links.new(n.outputs['Fac'], bump.inputs['Height']); nt.links.new(bump.outputs['Normal'], nt.nodes['Principled BSDF'].inputs['Normal'])
@@ -34,7 +35,7 @@ ramp = nt.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].color = (
 n2 = nt.nodes.new('ShaderNodeTexNoise'); n2.inputs['Scale'].default_value = 3; nt.links.new(n2.outputs['Fac'], ramp.inputs['Fac']); nt.links.new(ramp.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
 
 # --- govde + dallar (egrilmis, ince uca dogru daralan kavisler)
-wood = mat('Odun', (0.12, 0.06, 0.03), 0.85)
+wood = mat('Odun', (0.09, 0.045, 0.025), 0.9)
 tips = []
 def branch(p, d, L, r, depth):
     pts = [p]; cur = p.copy(); dd = d.copy()
@@ -73,20 +74,20 @@ def leafmat(i, base, tip):
 leafm = [leafmat(0, (0.05, 0.17, 0.03), (0.15, 0.36, 0.06)), leafmat(1, (0.07, 0.21, 0.04), (0.20, 0.42, 0.07)), leafmat(2, (0.10, 0.26, 0.05), (0.27, 0.48, 0.09))]
 me = bpy.data.meshes.new('Yaprak'); bm = bmesh.new(); uvl = bm.loops.layers.uv.new('UVMap'); tl = bm.loops.layers.color.new('tint')
 crown_c = Vector((0.1, 0, 3.7)); crown_r = Vector((2.1, 2.0, 1.7))
-def leaf(c, nrm, size):
+def leaf(c, nrm, size, dark=1.0):
     nrm = nrm.normalized(); t1 = nrm.cross(Vector((random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1)))).normalized(); t2 = nrm.cross(t1)
     L = size; Wd = size * 0.36
     pts = [c, c + t2 * L * 0.22 + t1 * Wd * 0.75, c + t2 * L * 0.62 + t1 * Wd, c + t2 * L, c + t2 * L * 0.62 - t1 * Wd, c + t2 * L * 0.22 - t1 * Wd * 0.75]
     m = c + t2 * L * 0.5 + nrm * L * random.uniform(0.04, 0.12)                       # orta damar hafif yukari: yaprak katlanir
     vs = [bm.verts.new(p) for p in pts]; vm = bm.verts.new(m)
-    uvs = [(0.5, 0), (0.1, 0.22), (0.0, 0.62), (0.5, 1), (1.0, 0.62), (0.9, 0.22)]; tn = random.uniform(0.75, 1.2); mi = random.randrange(3)
+    uvs = [(0.5, 0), (0.1, 0.22), (0.0, 0.62), (0.5, 1), (1.0, 0.62), (0.9, 0.22)]; tn = random.uniform(0.75, 1.15) * dark; mi = random.randrange(3)
     for k in range(6):
         f = bm.faces.new([vs[k], vs[(k + 1) % 6], vm]); f.material_index = mi; f.smooth = True
         for lp, q in zip(f.loops, [uvs[k], uvs[(k + 1) % 6], (0.5, 0.5)]): lp[uvl].uv = q; lp[tl] = (tn, tn * 0.98, tn * 0.95, 1)
-for _ in range(7500):
+for _ in range(13000):
     u = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))).normalized(); rad = random.random() ** 0.4 * 0.5 + 0.5
     c = crown_c + Vector((u.x * crown_r.x, u.y * crown_r.y, u.z * crown_r.z)) * rad
-    leaf(c, u + Vector((random.uniform(-.5, .5), random.uniform(-.5, .5), random.uniform(-.5, .5))), random.uniform(0.28, 0.42))
+    leaf(c, u + Vector((random.uniform(-.5, .5), random.uniform(-.5, .5), random.uniform(-.5, .5))), random.uniform(0.21, 0.33), 0.5 + 0.7 * rad)
 bm.to_mesh(me); bm.free(); lo = bpy.data.objects.new('Yaprak', me); bpy.context.collection.objects.link(lo)
 for m in leafm: me.materials.append(m)
 
