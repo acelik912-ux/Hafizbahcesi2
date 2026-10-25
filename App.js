@@ -69,6 +69,13 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   const cs = useRef(new Animated.Value(1)).current;        // kamera olcegi
   const cx = useRef(new Animated.Value(0)).current;        // kamera kaydirma
   const cy = useRef(new Animated.Value(0)).current;
+  const lx = useRef(new Animated.Value(0)).current;        // etrafa bakis (parallax)
+  const lookPan = useRef(PanResponder.create({
+    onMoveShouldSetPanResponderCapture: (e, g) => Math.abs(g.dx) > 12 && Math.abs(g.dx) > Math.abs(g.dy) * 1.5,
+    onPanResponderMove: (e, g) => lx.setValue(Math.max(-W * 0.22, Math.min(W * 0.22, g.dx * 0.5))),
+    onPanResponderRelease: () => T(lx, 0, 600).start(),
+    onPanResponderTerminate: () => T(lx, 0, 600).start(),
+  })).current;
   const leave = (then) => { if (busy.current) return; busy.current = true; onLeave(then === 'next'); Animated.timing(fade, { toValue: 0, duration: 400, useNativeDriver: true }).start(() => onDone(then === 'next')); };
   const onBack = () => { setMenu(false); leave('back'); };
   const flash = (t) => { setMsg(t); setTimeout(() => setMsg(null), 1500); };
@@ -154,12 +161,16 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   const handsTop = H * 0.82 - 0.39 * W * IMG_RATIO_HANDS;
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { opacity: fade, backgroundColor: '#12210f' }]}>
-      <Image source={SCENE.backdrop} style={[StyleSheet.absoluteFill, { width: W, height: H }]} resizeMode="cover" />
-      <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,20,6,0.28)' }]} />
+    <Animated.View {...lookPan.panHandlers} style={[StyleSheet.absoluteFill, { opacity: fade, backgroundColor: '#12210f' }]}>
+      {/* arka plan daha yavas kayar: derinlik hissi */}
+      <Animated.Image source={SCENE.backdrop} style={{ position: 'absolute', left: -W * 0.1, top: 0, width: W * 1.2, height: H, transform: [{ translateX: Animated.multiply(lx, 0.35) }] }} resizeMode="cover" />
+      <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(8,20,6,0.28)' }]} />
+      {/* gun isigi huzmeleri */}
+      <View pointerEvents="none" style={{ position: 'absolute', left: -W * 0.2, top: -H * 0.05, width: W * 0.35, height: H * 0.8, backgroundColor: 'rgba(255,236,170,0.10)', transform: [{ rotate: '-18deg' }] }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: W * 0.25, top: -H * 0.05, width: W * 0.18, height: H * 0.7, backgroundColor: 'rgba(255,236,170,0.07)', transform: [{ rotate: '-18deg' }] }} />
 
       {/* kamera: agac + meyveler birlikte yakinlasir */}
-      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { transformOrigin: [0, 0, 0], transform: [{ translateX: cx }, { translateY: cy }, { scale: cs }] }]}>
+      <Animated.View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { transformOrigin: [0, 0, 0], transform: [{ translateX: Animated.add(cx, lx) }, { translateY: cy }, { scale: cs }] }]}>
         <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: view.TW, height: view.TH, transformOrigin: [0, 0, 0], transform: [{ translateX: view.tx }, { translateY: view.ty }, { scale: view.s }] }}>
           <Image source={TREE_IMG[tree.n]} style={{ width: view.TW, height: view.TH }} resizeMode="stretch" />
         </View>
@@ -181,6 +192,9 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
         })}
       </Animated.View>
 
+      {/* vinyet: kenarlar kararir, odak ortada */}
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, height: H * 0.12, backgroundColor: 'rgba(0,0,0,0.22)' }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: H * 0.18, backgroundColor: 'rgba(0,0,0,0.25)' }} />
       {/* eller */}
       <Animated.Image pointerEvents="none" source={SCENE.palms} style={{ position: 'absolute', left: 0, top: handsTop, width: W, height: W * IMG_RATIO_HANDS, transform: [{ translateY: hy }] }} />
       {inHand && (
