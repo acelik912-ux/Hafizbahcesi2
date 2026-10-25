@@ -1,0 +1,29 @@
+name: Blender Render
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Blender indir
+        run: |
+          curl -sL -o b.tar.xz https://download.blender.org/release/Blender4.2/blender-4.2.3-linux-x64.tar.xz
+          tar xf b.tar.xz && mv blender-4.2.3-linux-x64 blender
+          sudo apt-get update -y && sudo apt-get install -y libxi6 libxxf86vm1 libxfixes3 libxrender1 libgl1 libsm6 libxkbcommon0 || true
+      - name: Render
+        run: |
+          mkdir -p out
+          ./blender/blender -b -P araclar3d/render_agac.py -- out/kayisi.png 2>&1 | tee out/render.log || true
+      - name: Sonuclari renders dalina gonder
+        if: always()
+        run: |
+          git config user.name "render-bot"; git config user.email "bot@example.com"
+          cp -r out /tmp/out_keep
+          git switch --orphan renders || git checkout --orphan renders
+          git rm -rf . >/dev/null 2>&1 || true
+          cp -r /tmp/out_keep/* .
+          git add -A && git commit -q -m "render sonuclari" && git push -f origin renders
