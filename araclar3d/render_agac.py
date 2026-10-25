@@ -10,7 +10,7 @@ scn.render.engine = 'CYCLES'; scn.cycles.device = 'CPU'; scn.cycles.samples = 40
 scn.render.resolution_x, scn.render.resolution_y = 1080, 1920
 ids = [i.identifier for i in scn.view_settings.bl_rna.properties['view_transform'].enum_items]
 scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard')
-scn.view_settings.exposure = -0.6
+scn.view_settings.exposure = -0.4
 
 def mat(name, color, rough=0.5, sss=0.0, coat=0.0, spec=0.5):
     m = bpy.data.materials.new(name); m.use_nodes = True; b = m.node_tree.nodes['Principled BSDF']
@@ -22,7 +22,7 @@ def mat(name, color, rough=0.5, sss=0.0, coat=0.0, spec=0.5):
 
 # --- dunya: Nishita gokyuzu + gunes
 w = bpy.data.worlds.new('W'); scn.world = w; w.use_nodes = True
-sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(24); sky.sun_rotation = math.radians(200); sky.sun_size = math.radians(1.6)
+sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(24); sky.sun_rotation = math.radians(200); sky.sun_size = math.radians(1.6); sky.sun_intensity = 0.30; sky.air_density = 1.0; sky.dust_density = 0.6
 w.node_tree.links.new(sky.outputs['Color'], w.node_tree.nodes['Background'].inputs['Color']); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
 
 # --- zemin: cimen
@@ -75,12 +75,15 @@ me = bpy.data.meshes.new('Yaprak'); bm = bmesh.new(); uvl = bm.loops.layers.uv.n
 crown_c = Vector((0.1, 0, 3.7)); crown_r = Vector((2.1, 2.0, 1.7))
 def leaf(c, nrm, size):
     nrm = nrm.normalized(); t1 = nrm.cross(Vector((random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1)))).normalized(); t2 = nrm.cross(t1)
-    L = size; Wd = size * 0.38
-    pts = [c, c + t2 * L * 0.3 + t1 * Wd * 0.8, c + t2 * L * 0.7 + t1 * Wd, c + t2 * L, c + t2 * L * 0.7 - t1 * Wd, c + t2 * L * 0.3 - t1 * Wd * 0.8]
-    vs = [bm.verts.new(p) for p in pts]; f = bm.faces.new(vs); f.material_index = random.randrange(3); f.smooth = True
-    uvs = [(0.5, 0), (0.1, 0.3), (0.0, 0.7), (0.5, 1), (1.0, 0.7), (0.9, 0.3)]; tn = random.uniform(0.75, 1.2)
-    for lp, q in zip(f.loops, uvs): lp[uvl].uv = q; lp[tl] = (tn, tn * random.uniform(0.95, 1.05), tn * 0.95, 1)
-for _ in range(9500):
+    L = size; Wd = size * 0.36
+    pts = [c, c + t2 * L * 0.22 + t1 * Wd * 0.75, c + t2 * L * 0.62 + t1 * Wd, c + t2 * L, c + t2 * L * 0.62 - t1 * Wd, c + t2 * L * 0.22 - t1 * Wd * 0.75]
+    m = c + t2 * L * 0.5 + nrm * L * random.uniform(0.04, 0.12)                       # orta damar hafif yukari: yaprak katlanir
+    vs = [bm.verts.new(p) for p in pts]; vm = bm.verts.new(m)
+    uvs = [(0.5, 0), (0.1, 0.22), (0.0, 0.62), (0.5, 1), (1.0, 0.62), (0.9, 0.22)]; tn = random.uniform(0.75, 1.2); mi = random.randrange(3)
+    for k in range(6):
+        f = bm.faces.new([vs[k], vs[(k + 1) % 6], vm]); f.material_index = mi; f.smooth = True
+        for lp, q in zip(f.loops, [uvs[k], uvs[(k + 1) % 6], (0.5, 0.5)]): lp[uvl].uv = q; lp[tl] = (tn, tn * 0.98, tn * 0.95, 1)
+for _ in range(7500):
     u = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))).normalized(); rad = random.random() ** 0.4 * 0.5 + 0.5
     c = crown_c + Vector((u.x * crown_r.x, u.y * crown_r.y, u.z * crown_r.z)) * rad
     leaf(c, u + Vector((random.uniform(-.5, .5), random.uniform(-.5, .5), random.uniform(-.5, .5))), random.uniform(0.28, 0.42))
@@ -88,7 +91,7 @@ bm.to_mesh(me); bm.free(); lo = bpy.data.objects.new('Yaprak', me); bpy.context.
 for m in leafm: me.materials.append(m)
 
 # --- meyveler
-fm = mat('Kayisi', (0.95, 0.38, 0.06), 0.35, 0.3, 0.25)
+fm = mat('Kayisi', (0.80, 0.22, 0.02), 0.35, 0.25, 0.3)
 for k in range(22):
     u = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, .7) - 0.1)).normalized()
     c = crown_c + Vector((u.x * crown_r.x, u.y * crown_r.y, u.z * crown_r.z)) * 0.93
