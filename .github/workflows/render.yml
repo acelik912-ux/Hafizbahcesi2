@@ -21,9 +21,7 @@ jobs:
       - name: Sonuclari renders dalina gonder
         if: always()
         run: |
-          git config user.name "render-bot"; git config user.email "bot@example.com"
-          cp -r out /tmp/out_keep
-          git switch --orphan renders || git checkout --orphan renders
-          git rm -rf . >/dev/null 2>&1 || true
-          cp -r /tmp/out_keep/* .
-          git add -A && git commit -q -m "render sonuclari" && git push -f origin renders
+          rm -rf /tmp/r && mkdir /tmp/r && cp -r out/* /tmp/r/ && cd /tmp/r
+          git init -q && git config user.name "render-bot" && git config user.email "bot@example.com"
+          git remote add origin "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git"
+          git checkout -q -b renders && git add -A && git commit -q -m "render sonuclari" && git push -f origin renders
