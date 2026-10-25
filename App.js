@@ -310,6 +310,7 @@ export default function App() {
   const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
   const [g3ok, setG3ok] = useState(true);        // gercek 3B bahce calisiyor mu (degilse eski 2B)
   const g3 = useRef(null);
+  const [warn, setWarn] = useState(null);
   const lab = useRef(new Animated.ValueXY({ x: -999, y: 0 })).current;
   const [ov, setOv] = useState(false);            // tum bahce (uzaktan) gorunumu
   const [st, setSt] = useState(0);                  // kameraya en yakin / secili agac indeksi
@@ -408,9 +409,11 @@ export default function App() {
             onNear={(i) => { if (modeRef.current === 'garden') setSt(i); }}
             onTap={(i) => tapTree.current(i)}
             onLabel={(x, y) => lab.setValue({ x, y })}
-            onFail={() => setG3ok(false)} />
+            onWarn={(m) => setWarn(m)}
+            onFail={(m) => { setWarn('3B hata: ' + m); setG3ok(false); }} />
         </Animated.View>
       )}
+      {warn && mode === 'garden' && <View pointerEvents="none" style={{ position: 'absolute', left: 8, right: 8, top: 120, backgroundColor: 'rgba(120,0,0,0.8)', padding: 6, borderRadius: 8 }}><Text style={{ color: '#fff', fontSize: 11 }}>{warn}</Text></View>}
       {g3ok && mode === 'garden' && (
         <Animated.View pointerEvents="none" style={{ position: 'absolute', left: -100, top: -30, width: 200, alignItems: 'center', transform: lab.getTranslateTransform() }}>
           <View style={S.lab2}><Text style={S.labTx}>{cur.n}. {cur.name}</Text></View>

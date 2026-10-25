@@ -32,9 +32,9 @@ function grassTexture() {
   return t;
 }
 
-const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, onLabel, onFail, onReady }, ref) {
+const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, onLabel, onFail, onReady, onWarn }, ref) {
   const S = useRef({ cb: {}, enabled: true, trees }).current;
-  S.cb = { onNear, onTap, onLabel, onFail, onReady }; S.enabled = enabled;
+  S.cb = { onNear, onTap, onLabel, onFail, onReady, onWarn }; S.enabled = enabled;
 
   const api = {
     walkTo(i, cb) { const g = S.g; if (!g) return; g.mode = 'walk'; g.tgt.d = treeDist(i) - WALK_BACK; g.tgt.h = EYE; g.tgt.pitch = 0.1; g.tgt.yaw = g.faceYaw(i, g.tgt.d); g.tgt.free = false; g.sel = i; g.done = cb ? [{ at: () => Math.abs(g.cur.d - g.tgt.d) < 0.12 && Math.abs(g.cur.yaw - g.tgt.yaw) < 0.02, fn: cb }] : []; g.dirty = true; },
@@ -130,13 +130,23 @@ const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, o
       scene.add(fl);
 
       // ---- AGACLAR: bizim gorseller, billboard + golge + secim halkasi
-      const loader = new TextureLoader(), meshes = [], pickList = [];
+      const loader = new TextureLoader(), meshes = [], pickList = [], phs = [], g0 = { dirty: true };
       S.trees.forEach((t, i) => {
         const h = 6.4 * TV(i), w = h * t.aspect, d = treeDist(i), x = treeX(i), z = -d;
         const geo = new THREE.PlaneGeometry(w, h); geo.translate(0, h / 2, 0);
-        const tex = loader.load(GARDEN_IMG[t.n]);
-        const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, color: 0xfff4de });
-        const m = new THREE.Mesh(geo, mat); m.position.set(x, 0, z); m.userData = { i, h, w }; scene.add(m); meshes.push(m); pickList.push(m);
+        const mat = new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, color: 0xfff4de });
+        const m = new THREE.Mesh(geo, mat); m.position.set(x, 0, z); m.userData = { i, h, w }; m.visible = false; scene.add(m); meshes.push(m); pickList.push(m);
+        // yedek: gorsel yuklenene kadar (veya yuklenemezse) kodla uretilmis basit agac
+        const ph = new THREE.Group(); ph.position.set(x, 0, z);
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.4, h * 0.45, 7), new THREE.MeshBasicMaterial({ color: 0x6b4a2b })); trunk.position.y = h * 0.22; ph.add(trunk);
+        const lc = [0x2f6b1f, 0x3f8a2a, 0x57a63a][i % 3];
+        [[0, 0.62, 0.34], [-0.2, 0.52, 0.26], [0.2, 0.55, 0.27]].forEach(([ox, oy, r]) => { const b = new THREE.Mesh(new THREE.IcosahedronGeometry(h * r, 1), new THREE.MeshBasicMaterial({ color: lc })); b.position.set(ox * h, oy * h, 0); ph.add(b); });
+        scene.add(ph); phs.push(ph);
+        const shown = () => { m.visible = true; ph.visible = false; g0.dirty = true; };
+        try {
+          const tex0 = loader.load(GARDEN_IMG[t.n], (tex) => { mat.map = tex; mat.needsUpdate = true; shown(); }, undefined, (e) => { S.cb.onWarn && S.cb.onWarn('Agac gorseli yuklenemedi: ' + String(e && e.message || e)); });
+          setTimeout(() => { if (!m.visible && tex0 && tex0.image) { mat.map = tex0; mat.needsUpdate = true; shown(); } }, 5000);
+        } catch (e) { S.cb.onWarn && S.cb.onWarn('Agac gorseli hatasi: ' + String(e && e.message || e)); }
         // yumusak zemin golgesi (3 halka)
         [[0.46, 0.14], [0.34, 0.14], [0.2, 0.18]].forEach(([r, o]) => {
           const sh = new THREE.Mesh(new THREE.CircleGeometry(w * r * 1.4, 20), new THREE.MeshBasicMaterial({ color: 0x0c1a06, transparent: true, opacity: o, depthWrite: false }));
@@ -146,14 +156,15 @@ const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, o
       const ring = new THREE.Mesh(new THREE.RingGeometry(1.5, 1.85, 40), new THREE.MeshBasicMaterial({ color: 0xffd54f, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false })); ring.rotation.x = -Math.PI / 2; ring.position.y = 0.06; ring.visible = false; scene.add(ring);
 
       // ---- kamera durumu
-      const g = {
-        cur: { d: -4, yaw: 0, pitch: 0.05, h: EYE }, tgt: { d: treeDist(0) - WALK_BACK, yaw: 0, pitch: 0.1, h: EYE }, sel: 0, done: [], dirty: true, stop: false, nearIdx: -1, last: Date.now(),
+      const g = Object.assign(g0, {
+        cur: { d: -4, yaw: 0, pitch: 0.05, h: EYE }, tgt: { d: treeDist(0) - WALK_BACK, yaw: 0, pitch: 0.1, h: EYE }, sel: 0, done: [], dirty: true, stop: false, nearIdx: -1, last: Date.now(), keep: Date.now() + 8000,
         faceYaw: (i, d) => { const cx = pathX(d), dx = treeX(i) - cx, dz = -treeDist(i) + d; return Math.atan2(-dx, -dz); },
         pick: (lx, ly) => {
           const rc = new THREE.Raycaster(); rc.setFromCamera(new THREE.Vector2((lx / SW) * 2 - 1, -(ly / SH) * 2 + 1), camera);
-          const hit = rc.intersectObjects(pickList, false); return hit.length ? hit[0].object.userData.i : -1;
+          const hit = rc.intersectObjects(pickList.filter((o) => o.visible).concat(phs.filter((p) => p.visible).flatMap((p) => p.children)), false);
+          if (!hit.length) return -1; let o = hit[0].object; while (o && o.userData.i === undefined && o.parent) o = o.parent; return o && o.userData.i !== undefined ? o.userData.i : phs.findIndex((p) => p.children.includes(hit[0].object));
         },
-      };
+      });
       g.tgt.yaw = g.faceYaw(0, g.tgt.d); S.g = g; S.cb.onReady && S.cb.onReady();
 
       const v3 = new THREE.Vector3();
@@ -164,12 +175,13 @@ const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, o
         const k = 1 - Math.exp(-dt * 4.2);
         let moving = false;
         for (const key of ['d', 'yaw', 'pitch', 'h']) { const df = g.tgt[key] - g.cur[key]; if (Math.abs(df) > 0.0008) { g.cur[key] += df * k; moving = true; } }
-        if (!moving && !g.dirty) return;
+        if (!moving && !g.dirty && now > g.keep) return;
         g.dirty = false;
         const px = pathX(g.cur.d);
         camera.position.set(px, g.cur.h, -g.cur.d); camera.rotation.set(g.cur.pitch, g.cur.yaw, 0);
         camera.updateMatrixWorld();
         sky.position.copy(camera.position); far.position.set(camera.position.x, 0, camera.position.z); sun.position.set(camera.position.x - 150, 70, camera.position.z - 330); sun.lookAt(camera.position);
+        phs.forEach((p, k) => { p.rotation.y = 0; });
         meshes.forEach((m) => { m.rotation.y = Math.atan2(camera.position.x - m.position.x, camera.position.z - m.position.z); });
         const sm = meshes[g.sel]; if (sm) { ring.visible = S.enabled && g.cur.pitch < 0.2 && g.cur.h < 5; ring.position.x = sm.position.x; ring.position.z = sm.position.z; }
         renderer.render(scene, camera); gl.endFrameEXP();
