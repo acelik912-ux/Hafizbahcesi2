@@ -47,7 +47,9 @@ def branch(p, d, L, r, depth):
         nd = (dd + Vector((random.uniform(-.7, .7), random.uniform(-.7, .7), random.uniform(0.0, .5)))).normalized(); branch(cur, nd, L * 0.78, r * 0.62, depth - 1)
 # govde: S kivrimli, iki ana kola cataldan ayrilir
 trunk = [Vector((0, 0, -0.1)), Vector((0.12, 0.02, 0.7)), Vector((-0.08, 0.0, 1.4)), Vector((0.05, 0.0, 2.0))]
-curve(trunk, 0.30, 0.24)
+curve(trunk, 0.42, 0.24)
+for a in (0.3, 1.5, 2.7, 3.9, 5.1):
+    curve([Vector((math.cos(a) * 0.5, math.sin(a) * 0.5, 0.0)), Vector((math.cos(a) * 0.3, math.sin(a) * 0.3, 0.12)), Vector((0.05, 0.0, 0.55))], 0.07, 0.17)
 fork = Vector((0.05, 0.0, 2.0))
 branch(fork, Vector((-0.55, 0.1, 1)).normalized(), 1.5, 0.15, 2); branch(fork, Vector((0.6, -0.1, 1)).normalized(), 1.5, 0.15, 2)
 for s in (-1, 1): branch(Vector((0.05, 0, 2.2)), Vector((s * 0.2, 0.55, 1)).normalized(), 1.2, 0.08, 2)
@@ -94,26 +96,26 @@ def shell(rad, count, size):
         c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * rad
         n = Vector((u.x / CR.x, u.y / CR.y, u.z / CR.z)).normalized()
         leaf(c, n, 0, size * random.uniform(0.85, 1.15), 0.45 + 0.5 * rad ** 2)
-for rad, cnt, sz in ((0.5, 260, 1.2), (0.66, 380, 1.15), (0.8, 520, 1.1), (0.92, 640, 1.05), (1.0, 560, 1.0)): shell(rad, cnt, sz)
+for rad, cnt, sz in ((0.5, 600, 0.85), (0.66, 900, 0.8), (0.8, 1300, 0.76), (0.92, 1700, 0.72), (1.0, 1500, 0.68)): shell(rad, cnt, sz)
 bm.to_mesh(me); bm.free(); lo = bpy.data.objects.new('Yaprak', me); bpy.context.collection.objects.link(lo)
 for m in leafm: me.materials.append(m)
 
 # kayisi meyvesi: yuvarlak, ortasinda ince olukla, turuncudan kirmiziya
-fm = mat('Kayisi', (0.9, 0.35, 0.05), 0.42, 0.25, 0.12); nt = fm.node_tree
+fm = mat('Kayisi', (0.9, 0.35, 0.05), 0.55, 0.35, 0.04); nt = fm.node_tree
 tc = nt.nodes.new('ShaderNodeTexCoord'); sp = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Generated'], sp.inputs['Vector'])
-fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.80, 0.34, 0.03, 1); fr.color_ramp.elements[1].color = (0.55, 0.05, 0.015, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
-nt.links.new(sp.outputs['X'], fr.inputs['Fac']); nt.links.new(fr.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
+fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.55, 0.15, 0.012, 1); fr.color_ramp.elements[1].color = (0.42, 0.035, 0.01, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
+nt.links.new(sp.outputs['X'], fr.inputs['Fac']); _no = nt.nodes.new('ShaderNodeTexNoise'); _no.inputs['Scale'].default_value = 9; _bu = nt.nodes.new('ShaderNodeBump'); _bu.inputs['Strength'].default_value = 0.08; nt.links.new(_no.outputs['Fac'], _bu.inputs['Height']); nt.links.new(_bu.outputs['Normal'], nt.nodes['Principled BSDF'].inputs['Normal']); nt.links.new(fr.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
 placed = []
 for k in range(40):
-    if len(placed) >= 9: break
+    if len(placed) >= 11: break
     u = Vector((random.uniform(-.9, .9), -random.uniform(0.35, 1.0), random.uniform(-0.5, .8))).normalized()      # on yuzey (kameraya bakan)
     c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * 1.07
     if any((c - q).length < 0.9 for q in placed): continue
-    placed.append(c); R = random.uniform(0.38, 0.45)
+    placed.append(c); R = random.uniform(0.34, 0.40)
     bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, radius=R, location=c); fo = bpy.context.object; fo.rotation_euler = (0, 0, random.uniform(0, 6.28))
     bm2 = bmesh.new(); bm2.from_mesh(fo.data)
     for v in bm2.verts:
-        gro = math.exp(-(v.co.x / (R * 0.10)) ** 2) * max(0, v.co.y / R) ** 0.5 * R * 0.075; v.co.x *= 0.95; v.co.z *= 0.93; v.co.y -= gro * (1 if v.co.y > 0 else 0)
+        gro = math.exp(-(v.co.x / (R * 0.09)) ** 2) * max(0, v.co.y / R) ** 0.4 * R * 0.17; v.co.x *= 0.97; v.co.z *= 0.92; v.co.y -= gro * (1 if v.co.y > 0 else 0)
         v.co.x = v.co.x - (gro * 0.0)
     bm2.to_mesh(fo.data); bm2.free(); bpy.ops.object.shade_smooth(); fo.data.materials.append(fm)
 
@@ -121,4 +123,6 @@ for k in range(40):
 cam = bpy.data.cameras.new('K'); cam.lens = 50; co = bpy.data.objects.new('K', cam); bpy.context.collection.objects.link(co); scn.camera = co
 co.location = Vector((0, -13.5, 3.7)); d = Vector((0, 0, 3.5)) - co.location; co.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
 scn.render.filepath = OUT; bpy.ops.render.render(write_still=True)
+co.location = Vector((0.5, -6.0, 0.9)); cam.lens = 30; d = Vector((0, 0, 3.9)) - co.location; co.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
+scn.render.filepath = OUT.replace('.png', '_alttan.png'); bpy.ops.render.render(write_still=True)
 print('TAMAM', OUT)
