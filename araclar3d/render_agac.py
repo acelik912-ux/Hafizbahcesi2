@@ -9,18 +9,19 @@ scn.render.engine = 'CYCLES'; scn.cycles.device = 'CPU'; scn.cycles.samples = 48
 scn.render.resolution_x, scn.render.resolution_y = 1080, 1920
 scn.render.film_transparent = True; scn.render.image_settings.file_format = 'PNG'; scn.render.image_settings.color_mode = 'RGBA'
 ids = [i.identifier for i in scn.view_settings.bl_rna.properties['view_transform'].enum_items]
-scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard'); scn.view_settings.exposure = -0.7
+scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard'); scn.view_settings.exposure = -1.2
 
 def mat(name, color, rough=0.5, sss=0.0, coat=0.0):
     m = bpy.data.materials.new(name); m.use_nodes = True; b = m.node_tree.nodes['Principled BSDF']
     b.inputs['Base Color'].default_value = (*color, 1); b.inputs['Roughness'].default_value = rough
     for k, v in (('Subsurface Weight', sss), ('Coat Weight', coat)):
         if k in b.inputs: b.inputs[k].default_value = v
+    if 'Specular IOR Level' in b.inputs: b.inputs['Specular IOR Level'].default_value = 0.25
     return m
 
 # dunya: gokyuzu isigi + gunes (arka plan seffaf)
 w = bpy.data.worlds.new('W'); scn.world = w; w.use_nodes = True
-sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(32); sky.sun_rotation = math.radians(215); sky.sun_size = math.radians(2.5); sky.sun_intensity = 0.28
+sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(32); sky.sun_rotation = math.radians(215); sky.sun_size = math.radians(2.5); sky.sun_intensity = 0.22
 w.node_tree.links.new(sky.outputs['Color'], w.node_tree.nodes['Background'].inputs['Color']); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.75
 bpy.ops.mesh.primitive_plane_add(size=300); g = bpy.context.object; g.is_shadow_catcher = True; g.data.materials.append(mat('Z', (0.08, 0.2, 0.04), 0.9))
 
@@ -53,7 +54,7 @@ for s in (-1, 1): branch(Vector((0.05, 0, 2.2)), Vector((s * 0.2, 0.55, 1)).norm
 
 # yaprak malzemesi: UV ile damar, ucu acik yesil; parlak
 def leafmat(i, base, tip):
-    m = mat('Y%d' % i, base, 0.32, 0.12); nt = m.node_tree; b = nt.nodes['Principled BSDF']
+    m = mat('Y%d' % i, base, 0.5, 0.10); nt = m.node_tree; b = nt.nodes['Principled BSDF']
     uv = nt.nodes.new('ShaderNodeTexCoord'); sep = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(uv.outputs['UV'], sep.inputs['Vector'])
     ramp = nt.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].color = (*base, 1); ramp.color_ramp.elements[1].color = (*tip, 1); nt.links.new(sep.outputs['Y'], ramp.inputs['Fac'])
     sub = nt.nodes.new('ShaderNodeMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = 0.5; nt.links.new(sep.outputs['X'], sub.inputs[0])
@@ -93,14 +94,14 @@ def shell(rad, count, size):
         c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * rad
         n = Vector((u.x / CR.x, u.y / CR.y, u.z / CR.z)).normalized()
         leaf(c, n, 0, size * random.uniform(0.85, 1.15), 0.42 + 0.85 * rad ** 2)
-for rad, cnt, sz in ((0.45, 1200, 0.62), (0.62, 1700, 0.58), (0.78, 2300, 0.55), (0.92, 2800, 0.52), (1.0, 2400, 0.50)): shell(rad, cnt, sz)
+for rad, cnt, sz in ((0.5, 260, 1.2), (0.66, 380, 1.15), (0.8, 520, 1.1), (0.92, 640, 1.05), (1.0, 560, 1.0)): shell(rad, cnt, sz)
 bm.to_mesh(me); bm.free(); lo = bpy.data.objects.new('Yaprak', me); bpy.context.collection.objects.link(lo)
 for m in leafm: me.materials.append(m)
 
 # kayisi meyvesi: yuvarlak, ortasinda ince olukla, turuncudan kirmiziya
-fm = mat('Kayisi', (0.9, 0.35, 0.05), 0.3, 0.3, 0.3); nt = fm.node_tree
+fm = mat('Kayisi', (0.9, 0.35, 0.05), 0.42, 0.25, 0.12); nt = fm.node_tree
 tc = nt.nodes.new('ShaderNodeTexCoord'); sp = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Generated'], sp.inputs['Vector'])
-fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.95, 0.52, 0.07, 1); fr.color_ramp.elements[1].color = (0.75, 0.10, 0.03, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
+fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.80, 0.34, 0.03, 1); fr.color_ramp.elements[1].color = (0.55, 0.05, 0.015, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
 nt.links.new(sp.outputs['X'], fr.inputs['Fac']); nt.links.new(fr.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
 placed = []
 for k in range(40):
