@@ -84,6 +84,10 @@ function TreeStage({ tree, startK, onLeave, onDone, onProgress, onNext, hasNext 
   const view = useMemo(() => {
     const TW = W, TH = W / tree.aspect;
     const [ccx, ccy, cw, ch] = tree.crown;
+    if (tree.fill) {   // alttan gorunum: gorsel ekrani kaplar (agacin altinda duruyormus gibi)
+      const s = Math.max(1.04, (H / TH) * 1.03);
+      return { TW, TH, s, tx: W / 2 - s * 0.5 * TW, ty: (H - s * TH) * 0.5 };
+    }
     const s = Math.min(1.12 / cw, (H * 0.62) / (ch * TH));
     return { TW, TH, s, tx: W / 2 - s * ccx * TW, ty: H * 0.34 - s * ccy * TH };
   }, [tree]);
@@ -279,7 +283,7 @@ const nearOf = (z) => clamp(Math.round((z + FOCUS) / L), 0, NTR - 1);
 
 const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, npath, onTap, sel, lab, done }) {
   const g = useMemo(() => {
-    const h = Math.min(H * 0.36, (W * 0.62) / t.aspect) * TV(i), w = h * t.aspect;
+    const ga = t.gaspect || t.aspect, h = Math.min(H * 0.36, (W * 0.62) / ga) * TV(i), w = h * ga;
     const inp = D_SAMP.map((d) => i * L - d);
     const sc = D_SAMP.map((d) => FL / (FL + d));
     const scale = cam.interpolate({ inputRange: inp, outputRange: sc, extrapolate: 'clamp' });
@@ -373,7 +377,7 @@ export default function App() {
     }
     walkTo(i, () => {
       busy.current = true;
-      const s = FL / (FL + FOCUS), h = Math.min(H * 0.36, (W * 0.62) / TREES[i].aspect) * TV(i);
+      const s = FL / (FL + FOCUS), h = Math.min(H * 0.36, (W * 0.62) / (TREES[i].gaspect || TREES[i].aspect)) * TV(i);
       setOrg([W / 2, HZ + GY * s - h * s * 0.5, 0]);
       requestAnimationFrame(() => T(ap, 1, 1100, { easing: Easing.in(Easing.cubic) }).start(() => { setTree(TREES[i]); setMode('tree'); busy.current = false; }));
     });

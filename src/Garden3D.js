@@ -129,7 +129,7 @@ const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, o
       // ---- AGACLAR: bizim gorseller, billboard + golge + secim halkasi
       const loader = new TextureLoader(), meshes = [], pickList = [], phs = [], g0 = { dirty: true };
       S.trees.forEach((t, i) => {
-        const h = 6.4 * TV(i), w = h * t.aspect, d = treeDist(i), x = treeX(i), z = -d;
+        const ga = t.gaspect || t.aspect, h = 6.4 * TV(i), w = h * ga, d = treeDist(i), x = treeX(i), z = -d;
         const geo = new THREE.PlaneGeometry(w, h); geo.translate(0, h / 2, 0);
         const mat = new THREE.MeshBasicMaterial({ transparent: true, alphaTest: 0.35, side: THREE.DoubleSide, color: 0xfff4de });
         const m = new THREE.Mesh(geo, mat); m.position.set(x, 0, z); m.userData = { i, h, w }; m.visible = false; scene.add(m); meshes.push(m); pickList.push(m);
