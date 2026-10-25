@@ -2,10 +2,17 @@
   "name": "hafiz-bahcesi",
   "version": "2.0.0",
   "main": "node_modules/expo/AppEntry.js",
-  "scripts": { "start": "expo start" },
+  "scripts": {
+    "start": "expo start"
+  },
   "dependencies": {
     "expo": "~54.0.0",
     "react": "19.1.0",
-    "react-native": "0.81.5"
+    "react-native": "0.81.5",
+    "expo-gl": "~16.0.0",
+    "expo-asset": "~12.0.0",
+    "expo-file-system": "~19.0.0",
+    "three": "0.166.1",
+    "expo-three": "^8.0.0"
   }
 }

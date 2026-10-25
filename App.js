@@ -2,6 +2,7 @@ import React, { useRef, useState, useEffect, useMemo } from 'react';
 import { View, Text, Image, Pressable, Animated, Easing, StyleSheet, Dimensions, StatusBar, ScrollView, PanResponder } from 'react-native';
 import DATA from './src/data.json';
 import TREES_XY from './src/trees.json';
+import Garden3D from './src/Garden3D';
 import { TREE_IMG, GARDEN_IMG, SCENE, IMG } from './src/assets';
 
 const { width: W, height: H } = Dimensions.get('window');
@@ -307,6 +308,9 @@ const GardenTree = React.memo(function GardenTree({ t, i, cam, camX, npath, onTa
 // ---------------------------------------------------------------- ana uygulama
 export default function App() {
   const [mode, setMode] = useState('gate');         // gate | entering | garden | tree
+  const [g3ok, setG3ok] = useState(true);        // gercek 3B bahce calisiyor mu (degilse eski 2B)
+  const g3 = useRef(null);
+  const lab = useRef(new Animated.ValueXY({ x: -999, y: 0 })).current;
   const [ov, setOv] = useState(false);            // tum bahce (uzaktan) gorunumu
   const [st, setSt] = useState(0);                  // kameraya en yakin / secili agac indeksi
   const [tree, setTree] = useState(null);
@@ -357,10 +361,15 @@ export default function App() {
     busy.current = true; setOv(true); camT.current = -2.4 * FL; camXT.current = 0;
     Animated.parallel([T(cam, -2.4 * FL, 1400), T(camX, 0, 1400)]).start(() => { busy.current = false; });
   };
-  const step = (dir) => { if (busy.current) return; walkTo(clamp(st + dir, 0, NTR - 1)); };
+  const step = (dir) => { if (busy.current) return; const ni = clamp(st + dir, 0, NTR - 1); if (g3ok) { setSt(ni); setOv(false); g3.current && g3.current.walkTo(ni); } else walkTo(ni); };
   const approachAt = useRef(null);
   approachAt.current = (i) => {
     if (busy.current || modeRef.current !== 'garden') return;
+    if (g3ok && g3.current) {
+      busy.current = true; setSt(i); setOv(false);
+      g3.current.walkTo(i, () => g3.current.approach(i, () => { setTree(TREES[i]); setMode('tree'); busy.current = false; }));
+      return;
+    }
     walkTo(i, () => {
       busy.current = true;
       const s = FL / (FL + FOCUS), h = Math.min(H * 0.36, (W * 0.62) / TREES[i].aspect) * TV(i);
@@ -369,9 +378,13 @@ export default function App() {
     });
   };
   const tapTree = useRef(null);
-  tapTree.current = (i) => { if (i === st && Math.abs(camT.current - (i * L - FOCUS)) < 4) approachAt.current(i); else walkTo(i); };      // once yuru, sonra yaklas
+  tapTree.current = (i) => {
+    if (g3ok && g3.current) { if (i === st && g3.current.atTree(i)) approachAt.current(i); else { setSt(i); setOv(false); g3.current.walkTo(i); } return; }
+    if (i === st && Math.abs(camT.current - (i * L - FOCUS)) < 4) approachAt.current(i); else walkTo(i);
+  };      // once yuru, sonra yaklas
   const onTap = useRef((i) => tapTree.current(i)).current;
   const onLeave = (next) => {
+    if (g3ok && g3.current) { const ns = next ? Math.min(NTR - 1, tree.n) : tree.n - 1; setSt(ns); if (next) g3.current.snapTo(ns); else g3.current.walkTo(ns); return; }
     if (next) { const ns = Math.min(NTR - 1, tree.n); setSt(ns); const z = ns * L - FOCUS, x = camXFor(ns); camT.current = z; camXT.current = x; cam.setValue(z); camX.setValue(x); }
     ap.setValue(0); setOrg(null);
   };
@@ -389,22 +402,39 @@ export default function App() {
   return (
     <View style={{ flex: 1, backgroundColor: '#12210f' }}>
       <StatusBar hidden />
-      {/* 3D bahce: zemin + perspektifli agaclar */}
+      {g3ok && mode !== 'gate' && (
+        <Animated.View style={[StyleSheet.absoluteFill, { transform: [{ scale: zs }] }]}>
+          <Garden3D ref={g3} trees={TREES} enabled={mode === 'garden'}
+            onNear={(i) => { if (modeRef.current === 'garden') setSt(i); }}
+            onTap={(i) => tapTree.current(i)}
+            onLabel={(x, y) => lab.setValue({ x, y })}
+            onFail={() => setG3ok(false)} />
+        </Animated.View>
+      )}
+      {g3ok && mode === 'garden' && (
+        <Animated.View pointerEvents="none" style={{ position: 'absolute', left: -100, top: -30, width: 200, alignItems: 'center', transform: lab.getTranslateTransform() }}>
+          <View style={S.lab2}><Text style={S.labTx}>{cur.n}. {cur.name}</Text></View>
+        </Animated.View>
+      )}
+      {!g3ok && (
       <Animated.View {...pan.panHandlers} style={[StyleSheet.absoluteFill, { transformOrigin: org || [W / 2, H / 2, 0], transform: [{ scale: camScale }] }]}>
         <Image source={SCENE.ground} resizeMode="cover" fadeDuration={0} style={{ position: 'absolute', left: 0, top: 0, width: W, height: H }} />
         {showTrees && TREES.slice(lo, hi + 1).map((t, j) => <GardenTree key={t.n} t={t} i={lo + j} cam={cam} camX={camX} npath={npath} onTap={onTap} sel={mode === 'garden' && lo + j === st} lab={!ov && Math.abs(lo + j - st) <= 3} done={prog[t.n] || 0} />)}
       </Animated.View>
-      {/* altin saat isigi / sis katmani */}
+      )}
+      {/* altin saat isigi / sis katmani (sadece 2B yedek) */}
+      {!g3ok && <>
       <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(255,240,215,0.10)' }]} />
       <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: HZ - H * 0.06, height: H * 0.12, backgroundColor: 'rgba(255,245,225,0.16)' }} />
       <View pointerEvents="none" style={{ position: 'absolute', left: -W * 0.3, top: HZ - H * 0.3, width: W * 0.9, height: H * 0.34, borderRadius: W, backgroundColor: 'rgba(255,236,170,0.13)' }} />
+      </>}
       {mode === 'garden' && (
         <>
           <View style={S.gardenTop} pointerEvents="none">
             <Text style={S.gTitle}>Cüz 1 · Hafız Bahçesi · yürümek için kaydır</Text>
             <Text style={S.gSub}>{cur.n}. {cur.name} ağacı  ·  {done}/{cur.page.ayat.length}{done >= cur.page.ayat.length ? '  ✓' : ''}</Text>
           </View>
-          <Pressable style={S.viewBtn} onPress={() => (ov ? walkTo(st) : overview())}><Text style={S.walkTx}>{ov ? '🚶 Yürüyüş' : '🦅 Tüm bahçe'}</Text></Pressable>
+          <Pressable style={S.viewBtn} onPress={() => { if (g3ok && g3.current) { if (ov) { setOv(false); g3.current.walkTo(st); } else { setOv(true); g3.current.overview(); } } else if (ov) walkTo(st); else overview(); }}><Text style={S.walkTx}>{ov ? '🚶 Yürüyüş' : '🦅 Tüm bahçe'}</Text></Pressable>
           <View style={S.walkBar}>
             <Pressable style={[S.walkB, st === 0 && { opacity: 0.35 }]} onPress={() => step(-1)}><Text style={S.walkTx}>▼ Geri</Text></Pressable>
             <Pressable style={[S.walkB, S.walkMain]} onPress={() => approachAt.current(st)}><Text style={[S.walkTx, { fontSize: 16 }]}>Ağaca yaklaş</Text></Pressable>
@@ -472,6 +502,7 @@ const S = StyleSheet.create({
   tagN: { position: 'absolute', left: '50%', marginLeft: -9, top: '38%', minWidth: 18, height: 18, borderRadius: 9, backgroundColor: 'rgba(30,20,10,0.75)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 3 },
   tagTx: { color: '#fff', fontSize: 10, fontWeight: '800' },
   tagSpot: { position: 'absolute', right: 8, top: 8, minWidth: 22, height: 22, borderRadius: 11, backgroundColor: 'rgba(30,20,10,0.75)', alignItems: 'center', justifyContent: 'center', paddingHorizontal: 4 },
+  lab2: { backgroundColor: '#e65100', borderColor: 'rgba(255,215,120,0.8)', borderWidth: 1, borderRadius: 14, paddingHorizontal: 12, paddingVertical: 4 },
   lab: { position: 'absolute', top: '101%', alignSelf: 'center', backgroundColor: 'rgba(25,40,20,0.8)', borderColor: 'rgba(255,215,120,0.6)', borderWidth: 1, borderRadius: 14, paddingHorizontal: 10, paddingVertical: 3 },
   labTx: { color: '#fff8e7', fontSize: 13, fontWeight: '700' },
   tagName: { position: 'absolute', top: '102%', alignSelf: 'center', backgroundColor: '#e65100', borderRadius: 9, paddingHorizontal: 7, paddingVertical: 2, minWidth: 54, alignItems: 'center' },
