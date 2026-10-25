@@ -11,7 +11,7 @@ scn.render.resolution_x, scn.render.resolution_y = 1080, 1920
 scn.render.film_transparent = True; scn.render.image_settings.file_format = 'PNG'; scn.render.image_settings.color_mode = 'RGBA'
 ids = [i.identifier for i in scn.view_settings.bl_rna.properties['view_transform'].enum_items]
 scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard')
-scn.view_settings.exposure = -0.4
+scn.view_settings.exposure = -0.8
 
 def mat(name, color, rough=0.5, sss=0.0, coat=0.0, spec=0.5):
     m = bpy.data.materials.new(name); m.use_nodes = True; b = m.node_tree.nodes['Principled BSDF']
@@ -23,7 +23,7 @@ def mat(name, color, rough=0.5, sss=0.0, coat=0.0, spec=0.5):
 
 # --- dunya: Nishita gokyuzu + gunes
 w = bpy.data.worlds.new('W'); scn.world = w; w.use_nodes = True
-sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(24); sky.sun_rotation = math.radians(200); sky.sun_size = math.radians(1.6); sky.sun_intensity = 0.30; sky.air_density = 1.0; sky.dust_density = 0.6
+sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(24); sky.sun_rotation = math.radians(200); sky.sun_size = math.radians(1.6); sky.sun_intensity = 0.22; sky.air_density = 1.0; sky.dust_density = 0.6
 w.node_tree.links.new(sky.outputs['Color'], w.node_tree.nodes['Background'].inputs['Color']); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
 
 # --- zemin: cimen
@@ -35,7 +35,10 @@ ramp = nt.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].color = (
 n2 = nt.nodes.new('ShaderNodeTexNoise'); n2.inputs['Scale'].default_value = 3; nt.links.new(n2.outputs['Fac'], ramp.inputs['Fac']); nt.links.new(ramp.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
 
 # --- govde + dallar (egrilmis, ince uca dogru daralan kavisler)
-wood = mat('Odun', (0.09, 0.045, 0.025), 0.9)
+wood = mat('Odun', (0.035, 0.016, 0.008), 0.95)
+_n = wood.node_tree.nodes.new('ShaderNodeTexNoise'); _n.inputs['Scale'].default_value = 14; _n.inputs['Detail'].default_value = 8
+_b = wood.node_tree.nodes.new('ShaderNodeBump'); _b.inputs['Strength'].default_value = 0.9
+wood.node_tree.links.new(_n.outputs['Fac'], _b.inputs['Height']); wood.node_tree.links.new(_b.outputs['Normal'], wood.node_tree.nodes['Principled BSDF'].inputs['Normal'])
 tips = []
 def branch(p, d, L, r, depth):
     pts = [p]; cur = p.copy(); dd = d.copy()
