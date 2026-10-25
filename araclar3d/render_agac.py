@@ -46,12 +46,12 @@ def branch(p, d, L, r, depth):
     for k in range(2):
         nd = (dd + Vector((random.uniform(-.7, .7), random.uniform(-.7, .7), random.uniform(0.0, .5)))).normalized(); branch(cur, nd, L * 0.78, r * 0.62, depth - 1)
 # govde: S kivrimli, iki ana kola cataldan ayrilir
-trunk = [Vector((0, 0, -0.1)), Vector((0.12, 0.02, 0.7)), Vector((-0.08, 0.0, 1.4)), Vector((0.05, 0.0, 2.0))]
-curve(trunk, 0.42, 0.24)
+trunk = [Vector((0, 0, -0.1)), Vector((0.12, 0.02, 0.7)), Vector((-0.08, 0.0, 1.4)), Vector((0.05, 0.0, 2.15))]
+curve(trunk, 0.42, 0.15)
 for a in (0.3, 1.5, 2.7, 3.9, 5.1):
     curve([Vector((math.cos(a) * 0.5, math.sin(a) * 0.5, 0.0)), Vector((math.cos(a) * 0.3, math.sin(a) * 0.3, 0.12)), Vector((0.05, 0.0, 0.55))], 0.07, 0.17)
 fork = Vector((0.05, 0.0, 2.0))
-branch(fork, Vector((-0.55, 0.1, 1)).normalized(), 1.5, 0.15, 2); branch(fork, Vector((0.6, -0.1, 1)).normalized(), 1.5, 0.15, 2)
+branch(fork, Vector((-0.55, 0.1, 1)).normalized(), 1.5, 0.19, 2); branch(fork, Vector((0.6, -0.1, 1)).normalized(), 1.5, 0.19, 2)
 for s in (-1, 1): branch(Vector((0.05, 0, 2.2)), Vector((s * 0.2, 0.55, 1)).normalized(), 1.2, 0.08, 2)
 
 # yaprak malzemesi: UV ile damar, ucu acik yesil; parlak
@@ -107,11 +107,11 @@ fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.55
 nt.links.new(sp.outputs['X'], fr.inputs['Fac']); _no = nt.nodes.new('ShaderNodeTexNoise'); _no.inputs['Scale'].default_value = 9; _bu = nt.nodes.new('ShaderNodeBump'); _bu.inputs['Strength'].default_value = 0.08; nt.links.new(_no.outputs['Fac'], _bu.inputs['Height']); nt.links.new(_bu.outputs['Normal'], nt.nodes['Principled BSDF'].inputs['Normal']); nt.links.new(fr.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
 placed = []
 for k in range(40):
-    if len(placed) >= 11: break
+    if len(placed) >= 8: break
     u = Vector((random.uniform(-.9, .9), -random.uniform(0.35, 1.0), random.uniform(-0.5, .8))).normalized()      # on yuzey (kameraya bakan)
-    c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * 1.07
-    if any((c - q).length < 0.9 for q in placed): continue
-    placed.append(c); R = random.uniform(0.34, 0.40)
+    c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * 1.0
+    if any((c - q).length < 1.15 for q in placed): continue
+    placed.append(c); R = random.uniform(0.26, 0.31)
     bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, radius=R, location=c); fo = bpy.context.object; fo.rotation_euler = (0, 0, random.uniform(0, 6.28))
     bm2 = bmesh.new(); bm2.from_mesh(fo.data)
     for v in bm2.verts:
