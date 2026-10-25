@@ -125,9 +125,6 @@ const Garden3D = forwardRef(function Garden3D({ trees, enabled, onNear, onTap, o
       const tuf = new THREE.InstancedMesh(new THREE.ConeGeometry(0.09, 0.55, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }), 2600);
       for (let k = 0; k < 2600; k++) { const d = -10 + rnd() * 190, side = rnd() > 0.5 ? 1 : -1, off = 2.4 + Math.pow(rnd(), 1.6) * 22, s = 0.7 + rnd() * 1.1; dm.position.set(pathX(d) + side * off, 0.25 * s, -d); dm.scale.set(s, s, s); dm.rotation.set((rnd() - 0.5) * 0.4, 0, (rnd() - 0.5) * 0.4); dm.updateMatrix(); tuf.setMatrixAt(k, dm.matrix); sc2.setRGB(0.22 + rnd() * 0.15, 0.45 + rnd() * 0.2, 0.15 + rnd() * 0.08); tuf.setColorAt(k, sc2); }
       scene.add(tuf);
-      const fl = new THREE.InstancedMesh(new THREE.SphereGeometry(0.1, 6, 4), new THREE.MeshBasicMaterial({ color: 0xffffff }), 700), FC = [[1, 0.84, 0.1], [1, 1, 0.95], [0.72, 0.38, 0.9], [1, 0.62, 0.1], [0.95, 0.4, 0.55]];
-      for (let k = 0; k < 700; k++) { const d = -6 + rnd() * 180, side = rnd() > 0.5 ? 1 : -1, off = 2.3 + Math.pow(rnd(), 1.5) * 16; dm.position.set(pathX(d) + side * off, 0.34, -d); dm.scale.setScalar(0.7 + rnd() * 0.8); dm.rotation.set(0, 0, 0); dm.updateMatrix(); fl.setMatrixAt(k, dm.matrix); const f = FC[k % 5]; sc2.setRGB(f[0], f[1], f[2]); fl.setColorAt(k, sc2); }
-      scene.add(fl);
 
       // ---- AGACLAR: bizim gorseller, billboard + golge + secim halkasi
       const loader = new TextureLoader(), meshes = [], pickList = [], phs = [], g0 = { dirty: true };
