@@ -1,108 +1,123 @@
-# Blender (arka planda, GitHub Actions uzerinde) ile kayisi agaci: gercek 3B model + Cycles ile film kalitesine yakin goruntu.
-# Kullanim: blender -b -P render_agac.py -- cikti.png
+# Blender (arka planda, GitHub Actions) ile kayisi agaci: kubbe taclı, catallanan govdeli, parlak yaprakli, catlakli meyveli. Cikti: seffaf PNG.
 import bpy, bmesh, math, random, sys
 from mathutils import Vector
-random.seed(11)
+random.seed(21)
 OUT = sys.argv[sys.argv.index('--') + 1]
 bpy.ops.wm.read_factory_settings(use_empty=True)
 scn = bpy.context.scene
-scn.render.engine = 'CYCLES'; scn.cycles.device = 'CPU'; scn.cycles.samples = 40; scn.cycles.use_denoising = True
+scn.render.engine = 'CYCLES'; scn.cycles.device = 'CPU'; scn.cycles.samples = 48; scn.cycles.use_denoising = True
 scn.render.resolution_x, scn.render.resolution_y = 1080, 1920
 scn.render.film_transparent = True; scn.render.image_settings.file_format = 'PNG'; scn.render.image_settings.color_mode = 'RGBA'
 ids = [i.identifier for i in scn.view_settings.bl_rna.properties['view_transform'].enum_items]
-scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard')
-scn.view_settings.exposure = -0.8
+scn.view_settings.view_transform = 'AgX' if 'AgX' in ids else ('Filmic' if 'Filmic' in ids else 'Standard'); scn.view_settings.exposure = -0.7
 
-def mat(name, color, rough=0.5, sss=0.0, coat=0.0, spec=0.5):
+def mat(name, color, rough=0.5, sss=0.0, coat=0.0):
     m = bpy.data.materials.new(name); m.use_nodes = True; b = m.node_tree.nodes['Principled BSDF']
     b.inputs['Base Color'].default_value = (*color, 1); b.inputs['Roughness'].default_value = rough
     for k, v in (('Subsurface Weight', sss), ('Coat Weight', coat)):
         if k in b.inputs: b.inputs[k].default_value = v
-    if 'Subsurface Radius' in b.inputs and sss: b.inputs['Subsurface Radius'].default_value = (0.4, 0.5, 0.2)
     return m
 
-# --- dunya: Nishita gokyuzu + gunes
+# dunya: gokyuzu isigi + gunes (arka plan seffaf)
 w = bpy.data.worlds.new('W'); scn.world = w; w.use_nodes = True
-sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(24); sky.sun_rotation = math.radians(200); sky.sun_size = math.radians(1.6); sky.sun_intensity = 0.22; sky.air_density = 1.0; sky.dust_density = 0.6
-w.node_tree.links.new(sky.outputs['Color'], w.node_tree.nodes['Background'].inputs['Color']); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.7
+sky = w.node_tree.nodes.new('ShaderNodeTexSky'); sky.sky_type = 'NISHITA'; sky.sun_elevation = math.radians(32); sky.sun_rotation = math.radians(215); sky.sun_size = math.radians(2.5); sky.sun_intensity = 0.28
+w.node_tree.links.new(sky.outputs['Color'], w.node_tree.nodes['Background'].inputs['Color']); w.node_tree.nodes['Background'].inputs['Strength'].default_value = 0.75
+bpy.ops.mesh.primitive_plane_add(size=300); g = bpy.context.object; g.is_shadow_catcher = True; g.data.materials.append(mat('Z', (0.08, 0.2, 0.04), 0.9))
 
-# --- zemin: cimen
-bpy.ops.mesh.primitive_plane_add(size=300); g = bpy.context.object; g.name = 'Cimen'; g.is_shadow_catcher = True
-gm = mat('Cimen', (0.10, 0.28, 0.05), 0.9); g.data.materials.append(gm)
-nt = gm.node_tree; n = nt.nodes.new('ShaderNodeTexNoise'); n.inputs['Scale'].default_value = 60; bump = nt.nodes.new('ShaderNodeBump'); bump.inputs['Strength'].default_value = 0.6
-nt.links.new(n.outputs['Fac'], bump.inputs['Height']); nt.links.new(bump.outputs['Normal'], nt.nodes['Principled BSDF'].inputs['Normal'])
-ramp = nt.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].color = (0.06, 0.20, 0.03, 1); ramp.color_ramp.elements[1].color = (0.22, 0.42, 0.08, 1)
-n2 = nt.nodes.new('ShaderNodeTexNoise'); n2.inputs['Scale'].default_value = 3; nt.links.new(n2.outputs['Fac'], ramp.inputs['Fac']); nt.links.new(ramp.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
-
-# --- govde + dallar (egrilmis, ince uca dogru daralan kavisler)
-wood = mat('Odun', (0.035, 0.016, 0.008), 0.95)
-_n = wood.node_tree.nodes.new('ShaderNodeTexNoise'); _n.inputs['Scale'].default_value = 14; _n.inputs['Detail'].default_value = 8
-_b = wood.node_tree.nodes.new('ShaderNodeBump'); _b.inputs['Strength'].default_value = 0.9
+# govde + catal + dallar
+wood = mat('Odun', (0.05, 0.024, 0.012), 0.9)
+_n = wood.node_tree.nodes.new('ShaderNodeTexNoise'); _n.inputs['Scale'].default_value = 16; _n.inputs['Detail'].default_value = 8
+_b = wood.node_tree.nodes.new('ShaderNodeBump'); _b.inputs['Strength'].default_value = 0.8
 wood.node_tree.links.new(_n.outputs['Fac'], _b.inputs['Height']); wood.node_tree.links.new(_b.outputs['Normal'], wood.node_tree.nodes['Principled BSDF'].inputs['Normal'])
-tips = []
+def curve(pts, r0, r1):
+    cv = bpy.data.curves.new('b', 'CURVE'); cv.dimensions = '3D'; cv.bevel_depth = 1.0; cv.bevel_resolution = 4; cv.use_fill_caps = True
+    sp = cv.splines.new('NURBS' if len(pts) > 3 else 'POLY'); sp.points.add(len(pts) - 1)
+    for i, q in enumerate(pts): sp.points[i].co = (q.x, q.y, q.z, 1); sp.points[i].radius = r0 + (r1 - r0) * i / (len(pts) - 1)
+    if sp.type == 'NURBS': sp.use_endpoint_u = True; sp.order_u = 3
+    o = bpy.data.objects.new('b', cv); bpy.context.collection.objects.link(o); cv.materials.append(wood)
+twig = []
 def branch(p, d, L, r, depth):
     pts = [p]; cur = p.copy(); dd = d.copy()
     for k in range(4):
-        dd = (dd + Vector((random.uniform(-.25, .25), random.uniform(-.25, .25), random.uniform(0.0, .12)))).normalized()
-        cur = cur + dd * (L / 4); pts.append(cur.copy())
-    cv = bpy.data.curves.new('b', 'CURVE'); cv.dimensions = '3D'; cv.bevel_depth = r; cv.bevel_resolution = 3; cv.use_fill_caps = True
-    sp = cv.splines.new('POLY'); sp.points.add(len(pts) - 1)
-    for i, q in enumerate(pts): sp.points[i].co = (q.x, q.y, q.z, 1); sp.points[i].radius = 1.0 - 0.55 * i / (len(pts) - 1)
-    o = bpy.data.objects.new('b', cv); bpy.context.collection.objects.link(o); cv.materials.append(wood)
-    if depth == 0: tips.append((cur.copy(), dd.copy())); return
-    for k in range(2 if depth > 1 else 3):
-        nd = (dd + Vector((random.uniform(-.8, .8), random.uniform(-.8, .8), random.uniform(0.05, .6)))).normalized()
-        branch(cur, nd, L * 0.72, r * 0.6, depth - 1)
-    tips.append((cur.copy(), dd.copy()))
-branch(Vector((0, 0, 0)), Vector((0.05, 0.0, 1)), 1.9, 0.34, 0)       # govde
-top = Vector((0.1, 0.0, 1.9))
-for s in (-1, 1): branch(top, Vector((s * 0.55, random.uniform(-.2, .2), 1)).normalized(), 1.4, 0.2, 3)
+        dd = (dd + Vector((random.uniform(-.2, .2), random.uniform(-.2, .2), random.uniform(-.02, .1)))).normalized(); cur = cur + dd * (L / 4); pts.append(cur.copy())
+    curve(pts, r, r * 0.62)
+    if depth == 0: twig.append(cur.copy()); return
+    for k in range(2):
+        nd = (dd + Vector((random.uniform(-.7, .7), random.uniform(-.7, .7), random.uniform(0.0, .5)))).normalized(); branch(cur, nd, L * 0.78, r * 0.62, depth - 1)
+# govde: S kivrimli, iki ana kola cataldan ayrilir
+trunk = [Vector((0, 0, -0.1)), Vector((0.12, 0.02, 0.7)), Vector((-0.08, 0.0, 1.4)), Vector((0.05, 0.0, 2.0))]
+curve(trunk, 0.30, 0.24)
+fork = Vector((0.05, 0.0, 2.0))
+branch(fork, Vector((-0.55, 0.1, 1)).normalized(), 1.5, 0.15, 2); branch(fork, Vector((0.6, -0.1, 1)).normalized(), 1.5, 0.15, 2)
+for s in (-1, 1): branch(Vector((0.05, 0, 2.2)), Vector((s * 0.2, 0.55, 1)).normalized(), 1.2, 0.08, 2)
 
-# --- yapraklar: tek mesh, uc yesil tonu
+# yaprak malzemesi: UV ile damar, ucu acik yesil; parlak
 def leafmat(i, base, tip):
-    m = mat('Y%d' % i, base, 0.5, 0.15); nt = m.node_tree; b = nt.nodes['Principled BSDF']
+    m = mat('Y%d' % i, base, 0.32, 0.12); nt = m.node_tree; b = nt.nodes['Principled BSDF']
     uv = nt.nodes.new('ShaderNodeTexCoord'); sep = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(uv.outputs['UV'], sep.inputs['Vector'])
-    ramp = nt.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].color = (*base, 1); ramp.color_ramp.elements[1].color = (*tip, 1)
-    nt.links.new(sep.outputs['Y'], ramp.inputs['Fac'])
+    ramp = nt.nodes.new('ShaderNodeValToRGB'); ramp.color_ramp.elements[0].color = (*base, 1); ramp.color_ramp.elements[1].color = (*tip, 1); nt.links.new(sep.outputs['Y'], ramp.inputs['Fac'])
     sub = nt.nodes.new('ShaderNodeMath'); sub.operation = 'SUBTRACT'; sub.inputs[1].default_value = 0.5; nt.links.new(sep.outputs['X'], sub.inputs[0])
     ab = nt.nodes.new('ShaderNodeMath'); ab.operation = 'ABSOLUTE'; nt.links.new(sub.outputs[0], ab.inputs[0])
-    vr = nt.nodes.new('ShaderNodeValToRGB'); vr.color_ramp.elements[0].position = 0.0; vr.color_ramp.elements[0].color = (1, 1, 1, 1); vr.color_ramp.elements[1].position = 0.045; vr.color_ramp.elements[1].color = (0, 0, 0, 1)
-    nt.links.new(ab.outputs[0], vr.inputs['Fac'])
-    mix = nt.nodes.new('ShaderNodeMixRGB'); mix.blend_type = 'MIX'; mix.inputs['Color2'].default_value = (0.55, 0.62, 0.22, 1)
-    nt.links.new(vr.outputs['Color'], mix.inputs['Fac']); nt.links.new(ramp.outputs['Color'], mix.inputs['Color1'])
+    vr = nt.nodes.new('ShaderNodeValToRGB'); vr.color_ramp.elements[0].position = 0.0; vr.color_ramp.elements[0].color = (1, 1, 1, 1); vr.color_ramp.elements[1].position = 0.03; vr.color_ramp.elements[1].color = (0, 0, 0, 1); nt.links.new(ab.outputs[0], vr.inputs['Fac'])
+    mix = nt.nodes.new('ShaderNodeMixRGB'); mix.inputs['Color2'].default_value = (0.42, 0.55, 0.16, 1); nt.links.new(vr.outputs['Color'], mix.inputs['Fac']); nt.links.new(ramp.outputs['Color'], mix.inputs['Color1'])
     vc = nt.nodes.new('ShaderNodeVertexColor'); vc.layer_name = 'tint'
     mul = nt.nodes.new('ShaderNodeMixRGB'); mul.blend_type = 'MULTIPLY'; mul.inputs['Fac'].default_value = 1.0
     nt.links.new(mix.outputs['Color'], mul.inputs['Color1']); nt.links.new(vc.outputs['Color'], mul.inputs['Color2']); nt.links.new(mul.outputs['Color'], b.inputs['Base Color'])
     return m
-leafm = [leafmat(0, (0.05, 0.17, 0.03), (0.15, 0.36, 0.06)), leafmat(1, (0.07, 0.21, 0.04), (0.20, 0.42, 0.07)), leafmat(2, (0.10, 0.26, 0.05), (0.27, 0.48, 0.09))]
+leafm = [leafmat(0, (0.025, 0.11, 0.02), (0.09, 0.27, 0.04)), leafmat(1, (0.035, 0.14, 0.025), (0.12, 0.32, 0.05)), leafmat(2, (0.05, 0.17, 0.03), (0.16, 0.38, 0.06))]
 me = bpy.data.meshes.new('Yaprak'); bm = bmesh.new(); uvl = bm.loops.layers.uv.new('UVMap'); tl = bm.loops.layers.color.new('tint')
-crown_c = Vector((0.1, 0, 3.7)); crown_r = Vector((2.1, 2.0, 1.7))
-def leaf(c, nrm, size, dark=1.0):
-    nrm = nrm.normalized(); t1 = nrm.cross(Vector((random.uniform(-1, 1), random.uniform(-1, 1), random.uniform(-1, 1)))).normalized(); t2 = nrm.cross(t1)
-    L = size; Wd = size * 0.36
-    pts = [c, c + t2 * L * 0.22 + t1 * Wd * 0.75, c + t2 * L * 0.62 + t1 * Wd, c + t2 * L, c + t2 * L * 0.62 - t1 * Wd, c + t2 * L * 0.22 - t1 * Wd * 0.75]
-    m = c + t2 * L * 0.5 + nrm * L * random.uniform(0.04, 0.12)                       # orta damar hafif yukari: yaprak katlanir
-    vs = [bm.verts.new(p) for p in pts]; vm = bm.verts.new(m)
-    uvs = [(0.5, 0), (0.1, 0.22), (0.0, 0.62), (0.5, 1), (1.0, 0.62), (0.9, 0.22)]; tn = random.uniform(0.75, 1.15) * dark; mi = random.randrange(3)
-    for k in range(6):
-        f = bm.faces.new([vs[k], vs[(k + 1) % 6], vm]); f.material_index = mi; f.smooth = True
-        for lp, q in zip(f.loops, [uvs[k], uvs[(k + 1) % 6], (0.5, 0.5)]): lp[uvl].uv = q; lp[tl] = (tn, tn * 0.98, tn * 0.95, 1)
-for _ in range(13000):
-    u = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))).normalized(); rad = random.random() ** 0.4 * 0.5 + 0.5
-    c = crown_c + Vector((u.x * crown_r.x, u.y * crown_r.y, u.z * crown_r.z)) * rad
-    leaf(c, u + Vector((random.uniform(-.5, .5), random.uniform(-.5, .5), random.uniform(-.5, .5))), random.uniform(0.21, 0.33), 0.5 + 0.7 * rad)
+CC = Vector((0.0, 0.0, 4.0)); CR = Vector((2.25, 2.1, 1.75)); CUT = -0.42        # tac merkezi, yaricaplar, alt kesim (catal gorunsun)
+TS = [0, 0.14, 0.32, 0.52, 0.72, 0.9, 1.0]
+def leaf(c, nrm, down_bias, size, dark):
+    nrm = nrm.normalized(); dn = Vector((0, 0, -1)); t2 = (dn - nrm * dn.dot(nrm)); t2 = (t2.normalized() if t2.length > 1e-3 else nrm.cross(Vector((1, 0, 0))).normalized())
+    t2 = (t2 + Vector((random.uniform(-.55, .55), random.uniform(-.55, .55), random.uniform(-.55, .55)))); t2 = (t2 - nrm * t2.dot(nrm)).normalized(); t1 = nrm.cross(t2).normalized()
+    L = size; Wd = size * 0.42; tn = random.uniform(0.8, 1.2) * dark; mi = random.randrange(3)
+    ml, ll, rl = [], [], []
+    for t in TS:
+        wd = Wd * (math.sin(math.pi * min(1, t ** 0.75)) ** 0.8) ; lift = nrm * L * 0.13 * math.sin(math.pi * t) - nrm * L * 0.10 * t * t
+        m = c + t2 * L * t + lift; ml.append(bm.verts.new(m)); ll.append(bm.verts.new(m + t1 * wd - nrm * wd * 0.35)); rl.append(bm.verts.new(m - t1 * wd - nrm * wd * 0.35))
+    for k in range(len(TS) - 1):
+        for side, edge in ((0, ll), (1, rl)):
+            vs = [ml[k], ml[k + 1], edge[k + 1], edge[k]] if side == 0 else [ml[k], edge[k], edge[k + 1], ml[k + 1]]
+            try: f = bm.faces.new(vs)
+            except ValueError: continue
+            f.material_index = mi; f.smooth = True
+            us = {id(ml[k]): (0.5, TS[k]), id(ml[k + 1]): (0.5, TS[k + 1]), id(ll[k]): (0.0, TS[k]), id(ll[k + 1]): (0.0, TS[k + 1]), id(rl[k]): (1.0, TS[k]), id(rl[k + 1]): (1.0, TS[k + 1])}
+            for lp in f.loops: lp[uvl].uv = us[id(lp.vert)] if id(lp.vert) in us else (0.5, 0.5); lp[tl] = (tn, tn * 0.98, tn * 0.95, 1)
+def shell(rad, count, size):
+    for _ in range(count):
+        for _t in range(10):
+            u = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, 1))).normalized()
+            if u.z > CUT: break
+        else: continue
+        c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * rad
+        n = Vector((u.x / CR.x, u.y / CR.y, u.z / CR.z)).normalized()
+        leaf(c, n, 0, size * random.uniform(0.85, 1.15), 0.42 + 0.85 * rad ** 2)
+for rad, cnt, sz in ((0.45, 1200, 0.62), (0.62, 1700, 0.58), (0.78, 2300, 0.55), (0.92, 2800, 0.52), (1.0, 2400, 0.50)): shell(rad, cnt, sz)
 bm.to_mesh(me); bm.free(); lo = bpy.data.objects.new('Yaprak', me); bpy.context.collection.objects.link(lo)
 for m in leafm: me.materials.append(m)
 
-# --- meyveler
-fm = mat('Kayisi', (0.80, 0.22, 0.02), 0.35, 0.25, 0.3)
-for k in range(22):
-    u = Vector((random.gauss(0, 1), random.gauss(0, 1), random.gauss(0, .7) - 0.1)).normalized()
-    c = crown_c + Vector((u.x * crown_r.x, u.y * crown_r.y, u.z * crown_r.z)) * 0.93
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=3, radius=random.uniform(0.2, 0.26), location=c); fo = bpy.context.object; fo.scale.z = 0.92; bpy.ops.object.shade_smooth(); fo.data.materials.append(fm)
+# kayisi meyvesi: yuvarlak, ortasinda ince olukla, turuncudan kirmiziya
+fm = mat('Kayisi', (0.9, 0.35, 0.05), 0.3, 0.3, 0.3); nt = fm.node_tree
+tc = nt.nodes.new('ShaderNodeTexCoord'); sp = nt.nodes.new('ShaderNodeSeparateXYZ'); nt.links.new(tc.outputs['Generated'], sp.inputs['Vector'])
+fr = nt.nodes.new('ShaderNodeValToRGB'); fr.color_ramp.elements[0].color = (0.95, 0.52, 0.07, 1); fr.color_ramp.elements[1].color = (0.75, 0.10, 0.03, 1); fr.color_ramp.elements[0].position = 0.35; fr.color_ramp.elements[1].position = 0.9
+nt.links.new(sp.outputs['X'], fr.inputs['Fac']); nt.links.new(fr.outputs['Color'], nt.nodes['Principled BSDF'].inputs['Base Color'])
+placed = []
+for k in range(40):
+    if len(placed) >= 9: break
+    u = Vector((random.uniform(-.9, .9), -random.uniform(0.35, 1.0), random.uniform(-0.5, .8))).normalized()      # on yuzey (kameraya bakan)
+    c = CC + Vector((u.x * CR.x, u.y * CR.y, u.z * CR.z)) * 0.93
+    if any((c - q).length < 0.85 for q in placed): continue
+    placed.append(c); R = random.uniform(0.33, 0.4)
+    bpy.ops.mesh.primitive_uv_sphere_add(segments=48, ring_count=32, radius=R, location=c); fo = bpy.context.object; fo.rotation_euler = (0, 0, random.uniform(0, 6.28))
+    bm2 = bmesh.new(); bm2.from_mesh(fo.data)
+    for v in bm2.verts:
+        gro = math.exp(-(v.co.x / (R * 0.10)) ** 2) * max(0, v.co.y / R) ** 0.5 * R * 0.075; v.co.x *= 0.95; v.co.z *= 0.93; v.co.y -= gro * (1 if v.co.y > 0 else 0)
+        v.co.x = v.co.x - (gro * 0.0)
+    bm2.to_mesh(fo.data); bm2.free(); bpy.ops.object.shade_smooth(); fo.data.materials.append(fm)
 
-# --- kamera: agacin altindan, tacin icine dogru bakis
-cam = bpy.data.cameras.new('K'); cam.lens = 20; co = bpy.data.objects.new('K', cam); bpy.context.collection.objects.link(co); scn.camera = co
-co.location = Vector((0.4, -3.4, 0.9)); d = Vector((0.1, 0, 3.9)) - co.location; co.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
+# kamera: on gorunus (referans resimdeki gibi)
+cam = bpy.data.cameras.new('K'); cam.lens = 50; co = bpy.data.objects.new('K', cam); bpy.context.collection.objects.link(co); scn.camera = co
+co.location = Vector((0, -13.5, 3.7)); d = Vector((0, 0, 3.5)) - co.location; co.rotation_euler = d.to_track_quat('-Z', 'Y').to_euler()
 scn.render.filepath = OUT; bpy.ops.render.render(write_still=True)
 print('TAMAM', OUT)
